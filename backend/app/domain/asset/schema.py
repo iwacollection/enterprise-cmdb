@@ -100,7 +100,7 @@ class AssetWrite(BaseModel):
             if self.detail is not None:
                 raise ValueError(f"{self.asset_type} does not accept detail fields")
         elif self.detail is not None:
-            detail_model.model_validate(self.detail)
+            self.detail = detail_model.model_validate(self.detail).model_dump()
 
         if len(self.service_ids) != len(set(self.service_ids)):
             raise ValueError("service_ids must not contain duplicates")
