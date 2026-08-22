@@ -55,7 +55,9 @@ def test_audit_header_limits_are_part_of_openapi_contract():
     operation = app.openapi()["paths"]["/environments"]["post"]
     parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
 
-    assert parameters["X-CMDB-Actor"]["schema"]["maxLength"] == 255
+    actor_schema = parameters["X-CMDB-Actor"]["schema"]
+    actor_string_schema = next(item for item in actor_schema["anyOf"] if item.get("type") == "string")
+    assert actor_string_schema["maxLength"] == 255
 
     request_id_schema = parameters["X-Request-ID"]["schema"]
     request_id_string_schema = next(
