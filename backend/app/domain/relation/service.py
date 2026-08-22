@@ -7,6 +7,9 @@ class AssetRelationService:
     def __init__(self, repository: AssetRelationRepository):
         self.repository = repository
 
+    def asset_exists(self, asset_id: str) -> bool:
+        return self.repository.asset_exists(asset_id)
+
     def list_relations(self, asset_id: str, direction: str) -> list[AssetRelation]:
         return self.repository.list_for_asset(asset_id, direction)
 
