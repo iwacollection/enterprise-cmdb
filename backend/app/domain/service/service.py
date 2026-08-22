@@ -13,20 +13,34 @@ class ServiceService:
     def get_service(self, service_id: str) -> Service | None:
         return self.repository.get_by_id(service_id)
 
-    def create_service(self, data: ServiceCreate) -> Service:
+    def create_service(self, data: ServiceCreate, request_id: str, changed_by: str) -> Service:
         return self.repository.create(
             Service(
                 name=data.name,
                 team_id=data.team_id,
                 description=data.description,
-            )
+            ),
+            request_id,
+            changed_by,
         )
 
-    def update_service(self, service: Service, data: ServiceUpdate) -> Service:
+    def update_service(
+        self,
+        service: Service,
+        data: ServiceUpdate,
+        request_id: str,
+        changed_by: str,
+    ) -> Service:
+        before = {
+            "id": service.id,
+            "name": service.name,
+            "team_id": service.team_id,
+            "description": service.description,
+        }
         service.name = data.name
         service.team_id = data.team_id
         service.description = data.description
-        return self.repository.update(service)
+        return self.repository.update(service, before, request_id, changed_by)
 
-    def delete_service(self, service: Service) -> None:
-        self.repository.delete(service)
+    def delete_service(self, service: Service, request_id: str, changed_by: str) -> None:
+        self.repository.delete(service, request_id, changed_by)
