@@ -27,7 +27,7 @@ def test_cmdb_core_api_flow():
         "/environments",
         json={"name": "production", "description": "production environment"},
     )
-    assert environment.status_code == 200
+    assert environment.status_code == 201
     environment_id = environment.json()["id"]
 
     team = client.post(
