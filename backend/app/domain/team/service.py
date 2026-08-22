@@ -1,6 +1,6 @@
 from app.domain.team.model import Team
 from app.domain.team.repository import TeamRepository
-from app.domain.team.schema import TeamCreate
+from app.domain.team.schema import TeamCreate, TeamUpdate
 
 
 class TeamService:
@@ -20,3 +20,11 @@ class TeamService:
                 description=data.description,
             )
         )
+
+    def update_team(self, team: Team, data: TeamUpdate) -> Team:
+        team.name = data.name
+        team.description = data.description
+        return self.repository.update(team)
+
+    def delete_team(self, team: Team) -> None:
+        self.repository.delete(team)
