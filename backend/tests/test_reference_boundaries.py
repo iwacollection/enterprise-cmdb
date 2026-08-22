@@ -8,7 +8,7 @@ from app.database.dependency import get_session
 from app.main import app
 
 
-def test_team_and_service_reference_boundaries():
+def test_environment_team_and_service_reference_boundaries():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -63,6 +63,12 @@ def test_team_and_service_reference_boundaries():
         },
     )
     assert asset.status_code == 201, asset.text
+
+    environment_delete = client.delete(
+        f"/environments/{environment['id']}", headers=headers
+    )
+    assert environment_delete.status_code == 409
+    assert environment_delete.json()["detail"] == "Environment is still referenced by assets"
 
     service_delete = client.delete(f"/services/{service['id']}", headers=headers)
     assert service_delete.status_code == 409
