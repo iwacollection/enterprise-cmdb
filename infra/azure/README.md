@@ -60,29 +60,53 @@ No long-lived Entra client secret is stored in GitHub or Container Apps.
 
 The Container App auth configuration uses that user-assigned managed identity for the EasyAuth client assertion. The token store is not enabled because the CMDB does not need to call downstream APIs with the signed-in user's token.
 
+## One-time GitHub OIDC bootstrap
+
+A real production deployment was triggered from `deploy/azure-production`. The observed run `32583001170` failed at `azure/login` before any Azure resource deployment step because the GitHub `production` environment did not provide `AZURE_CLIENT_ID` / `AZURE_TENANT_ID`; `AZURE_POSTGRES_ADMIN_PASSWORD` was also absent.
+
+The repository contains a one-shot bootstrap for this account boundary:
+
+```bash
+az login
+gh auth login
+bash infra/azure/bootstrap-github-oidc.sh
+```
+
+The script is intentionally fail-fast. It does the following against the currently selected Azure subscription:
+
+1. creates or reuses the dedicated `github-enterprise-cmdb-deployer` Entra application and service principal,
+2. creates the GitHub environment federated credential with subject `repo:iwacollection/enterprise-cmdb:environment:production`,
+3. creates `rg-enterprise-cmdb` in `eastasia` if needed,
+4. grants the deployment service principal `Contributor`, `Role Based Access Control Administrator`, and `AcrPush` at that resource-group scope,
+5. requests Microsoft Graph `Application.ReadWrite.OwnedBy` and performs admin consent,
+6. generates a strong PostgreSQL administrator password without printing it,
+7. writes the four required values to GitHub `production` environment secrets with `gh secret set`,
+8. triggers `deploy-azure.yml` on `deploy/azure-production`.
+
+This bootstrap requires the signed-in Azure user to be allowed to create Entra applications, assign Azure roles at the target resource-group scope, and grant tenant admin consent for the Graph application permission. If any of those account-level permissions are missing, the script stops at that exact boundary instead of weakening the deployment identity.
+
 ## Required GitHub production secrets
 
-The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). Configure these GitHub `production` environment secrets:
+The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). These GitHub `production` environment secrets are consumed:
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
 - `AZURE_POSTGRES_ADMIN_PASSWORD`
 
-Do not store an Azure client secret in the repository.
+The bootstrap script sets them. Do not store an Azure client secret in the repository.
 
 ## Deployment identity permissions
 
 The GitHub OIDC deployment identity needs Azure RBAC permission to:
 
-1. create/update the selected resource group if the workflow creates it,
-2. deploy the resources in that resource group,
-3. create the `AcrPull` role assignment for the Container App pull identity,
-4. push the built `enterprise-cmdb` image to ACR.
+1. deploy the resources in the selected resource group,
+2. create the `AcrPull` role assignment for the Container App pull identity,
+3. push the built `enterprise-cmdb` image to ACR.
 
-The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; plain `Contributor` alone is not sufficient for that operation. Image push requires `AcrPush` on this RBAC-only registry.
+The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; `Role Based Access Control Administrator` supplies that action without the broader authorization surface of `User Access Administrator`. Image push requires `AcrPush` on this RBAC-only registry.
 
-The same deployment identity also needs Microsoft Graph application permission to create/update the Entra application and service principal through the Microsoft Graph Bicep extension. Prefer the least-privilege `Application.ReadWrite.OwnedBy` permission with tenant admin consent when organizational policy permits it; `Application.ReadWrite.All` is broader and should not be granted merely for convenience.
+The same deployment identity also needs Microsoft Graph application permission to create/update the Entra application and service principal through the Microsoft Graph Bicep extension. The bootstrap requests the least-privilege `Application.ReadWrite.OwnedBy` permission with tenant admin consent rather than `Application.ReadWrite.All`.
 
 This deployment intentionally does **not** assign real users or groups to `CMDB.Reader` or `CMDB.Admin`. Automating that would require additional Graph app-role-assignment permission and a concrete tenant principal ID. Those privileges and mappings are not guessed by the repository.
 
@@ -102,6 +126,7 @@ The production sequence is fail-closed:
 8. Only then enable external ingress.
 9. Verify an active revision exists.
 10. Verify `/health` is reachable and an unauthenticated `/ui/` request is redirected to login.
+11. Persist a non-sensitive deployment result containing run ID, status, commit, resource group, location, and name prefix to the deployment branch for troubleshooting.
 
 A failure before step 8 leaves the CMDB non-public.
 
