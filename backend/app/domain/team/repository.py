@@ -1,7 +1,9 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.domain.asset.model import Asset
 from app.domain.audit.model import ChangeRecord
+from app.domain.service.model import Service
 from app.domain.team.model import Team
 
 
@@ -14,6 +16,15 @@ class TeamRepository:
 
     def get_by_id(self, team_id: str) -> Team | None:
         return self.session.get(Team, team_id)
+
+    def is_referenced(self, team_id: str) -> bool:
+        service_reference = self.session.scalar(
+            select(Service.id).where(Service.team_id == team_id).limit(1)
+        )
+        if service_reference is not None:
+            return True
+        asset_reference = self.session.scalar(select(Asset.id).where(Asset.team_id == team_id).limit(1))
+        return asset_reference is not None
 
     def create(self, team: Team, request_id: str, changed_by: str) -> Team:
         self.session.add(team)
