@@ -1,8 +1,10 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.asset.model import AssetService
 from app.domain.audit.model import ChangeRecord
 from app.domain.service.model import Service
+from app.domain.team.model import Team
 
 
 class ServiceRepository:
@@ -14,6 +16,13 @@ class ServiceRepository:
 
     def get_by_id(self, service_id: str) -> Service | None:
         return self.session.get(Service, service_id)
+
+    def team_exists(self, team_id: str) -> bool:
+        return self.session.get(Team, team_id) is not None
+
+    def is_referenced(self, service_id: str) -> bool:
+        statement = select(AssetService.asset_id).where(AssetService.service_id == service_id).limit(1)
+        return self.session.scalar(statement) is not None
 
     def create(self, service: Service, request_id: str, changed_by: str) -> Service:
         self.session.add(service)
