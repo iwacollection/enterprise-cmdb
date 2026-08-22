@@ -14,3 +14,5 @@ Required checks:
 - Azure Bicep compile including Microsoft Graph v1.0 extension
 
 Any failure is a release defect and must be fixed before Azure production deployment is triggered.
+
+Validation iteration 2 includes the optional local actor OpenAPI contract fix.
