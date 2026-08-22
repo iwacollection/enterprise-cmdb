@@ -1,0 +1,8 @@
+[project]
+name = "enterprise-cmdb-backend"
+version = "0.1.0"
+description = "Enterprise CMDB backend"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
