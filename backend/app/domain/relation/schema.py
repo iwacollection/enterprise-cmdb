@@ -1,12 +1,12 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AssetRelationCreate(BaseModel):
-    source_asset_id: str
-    target_asset_id: str
-    relation_type: str
+    source_asset_id: str = Field(max_length=36)
+    target_asset_id: str = Field(max_length=36)
+    relation_type: str = Field(max_length=64)
     description: str | None = None
 
 
