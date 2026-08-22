@@ -23,10 +23,11 @@
 - Kubernetes Cluster Detail：K8s Version
 - Asset Relation Graph（资产依赖关系）
 - Transactional Audit（事务型变更审计）
-- Web Console（同源管理界面）
+- Web Console（同源管理界面，覆盖 V0.3 允许的创建/编辑/删除操作）
 - Health / Database Readiness
 - PostgreSQL + Alembic
 - Docker runtime
+- Frozen `uv.lock` dependency graph
 - GitHub Actions CI
 - Azure Container Apps + ACR + private PostgreSQL Bicep
 - GitHub Actions Azure OIDC deployment workflow
@@ -73,15 +74,22 @@ GET /ready    # 数据库可用
 每次 PR / main push 都执行：
 
 ```text
-Ruff
+uv lock --check
+→ frozen dependency install
+→ Ruff
+→ Web Console JavaScript syntax
 → Pytest
 → Alembic upgrade
 → Alembic schema drift check
 → Alembic downgrade base
 → Alembic upgrade head
-→ Docker build
+→ Docker Compose validation
+→ real PostgreSQL 16 + Alembic + FastAPI /health + /ready smoke test
+→ frozen Docker build
 → Azure Bicep compile
 ```
+
+最终 V0.3 技术 Gate 已验证 `28 passed`，真实 PostgreSQL runtime 与 Azure Bicep 均通过。
 
 ## Azure Deployment
 
