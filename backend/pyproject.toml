@@ -3,6 +3,16 @@ name = "enterprise-cmdb-backend"
 version = "0.1.0"
 description = "Enterprise CMDB backend"
 requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
