@@ -72,7 +72,7 @@ def _parser():
     r.add_argument("--request-increment", type=int, required=True)
     e = sub.add_parser("environment")
     e.add_argument("--usage-file", required=True)
-    e.add.add_argument("--resource-name", default="ManagedEnvironmentConsumptionCores")
+    e.add_argument("--resource-name", default="ManagedEnvironmentConsumptionCores")
     e.add_argument("--required-available", type=float, required=True)
     return parser
 
