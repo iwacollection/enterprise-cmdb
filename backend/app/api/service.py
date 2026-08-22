@@ -34,8 +34,11 @@ def create_service(
     context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
+    layer = get_service_layer(session)
+    if not layer.team_exists(payload.team_id):
+        raise HTTPException(status_code=404, detail="Team not found")
     actor, request_id = context
-    return get_service_layer(session).create_service(payload, request_id, actor)
+    return layer.create_service(payload, request_id, actor)
 
 
 @router.put("/{service_id}", response_model=ServiceResponse)
@@ -49,6 +52,8 @@ def update_service(
     service = layer.get_service(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail="Service not found")
+    if not layer.team_exists(payload.team_id):
+        raise HTTPException(status_code=404, detail="Team not found")
     actor, request_id = context
     return layer.update_service(service, payload, request_id, actor)
 
@@ -63,6 +68,8 @@ def delete_service(
     service = layer.get_service(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail="Service not found")
+    if layer.is_referenced(service_id):
+        raise HTTPException(status_code=409, detail="Service is still referenced by assets")
     actor, request_id = context
     layer.delete_service(service, request_id, actor)
     return Response(status_code=204)
