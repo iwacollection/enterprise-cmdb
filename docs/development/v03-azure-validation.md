@@ -11,3 +11,5 @@ Required checks:
 - Azure Bicep compile
 
 A failed check is treated as a development defect and must be fixed before deployment.
+
+Validation iteration 2 verifies the compiler-driven Bicep fixes against the latest `main` branch.
