@@ -21,3 +21,8 @@ class EnvironmentRepository:
         self.session.commit()
         self.session.refresh(environment)
         return environment
+
+    def update(self, environment: Environment) -> Environment:
+        self.session.commit()
+        self.session.refresh(environment)
+        return environment
