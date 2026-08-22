@@ -13,12 +13,12 @@ class TeamService:
     def get_team(self, team_id: str) -> Team | None:
         return self.repository.get_by_id(team_id)
 
+    def is_referenced(self, team_id: str) -> bool:
+        return self.repository.is_referenced(team_id)
+
     def create_team(self, data: TeamCreate, request_id: str, changed_by: str) -> Team:
         return self.repository.create(
-            Team(
-                name=data.name,
-                description=data.description,
-            ),
+            Team(name=data.name, description=data.description),
             request_id,
             changed_by,
         )
@@ -30,11 +30,7 @@ class TeamService:
         request_id: str,
         changed_by: str,
     ) -> Team:
-        before = {
-            "id": team.id,
-            "name": team.name,
-            "description": team.description,
-        }
+        before = {"id": team.id, "name": team.name, "description": team.description}
         team.name = data.name
         team.description = data.description
         return self.repository.update(team, before, request_id, changed_by)
