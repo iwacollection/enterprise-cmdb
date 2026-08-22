@@ -1,6 +1,6 @@
 from decimal import Decimal
 from ipaddress import ip_interface
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -16,35 +16,36 @@ AssetType = Literal[
     "kubernetes_cluster",
 ]
 AssetStatus = Literal["active", "inactive"]
+AssetId = Annotated[str, Field(max_length=36)]
 
 
 class ComputeDetailInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    cpu_cores: Decimal | None = Field(default=None, ge=0)
-    memory_mb: int | None = Field(default=None, ge=0)
-    disk_gb: int | None = Field(default=None, ge=0)
+    cpu_cores: Decimal | None = Field(default=None, ge=0, le=Decimal("9999.99"))
+    memory_mb: int | None = Field(default=None, ge=0, le=2147483647)
+    disk_gb: int | None = Field(default=None, ge=0, le=2147483647)
 
 
 class DatabaseDetailInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    engine: str
-    version: str | None = None
+    engine: str = Field(max_length=64)
+    version: str | None = Field(default=None, max_length=64)
 
 
 class RedisDetailInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    version: str | None = None
+    version: str | None = Field(default=None, max_length=64)
 
 
 class MessageQueueDetailInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    engine: str
-    version: str | None = None
+    engine: str = Field(max_length=64)
+    version: str | None = Field(default=None, max_length=64)
 
 
 class KubernetesClusterDetailInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    version: str | None = None
+    version: str | None = Field(default=None, max_length=64)
 
 
 DETAIL_MODELS = {
@@ -59,8 +60,8 @@ DETAIL_MODELS = {
 
 class AssetIPInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    address: str
-    role: str | None = None
+    address: str = Field(max_length=128)
+    role: str | None = Field(default=None, max_length=64)
     is_primary: bool = False
 
     @field_validator("address")
@@ -72,23 +73,23 @@ class AssetIPInput(BaseModel):
 
 class AssetEndpointInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    endpoint: str
+    endpoint: str = Field(max_length=255)
     port: int = Field(ge=1, le=65535)
-    protocol: str | None = None
-    role: str | None = None
+    protocol: str | None = Field(default=None, max_length=32)
+    role: str | None = Field(default=None, max_length=64)
     is_primary: bool = False
 
 
 class AssetWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str
+    name: str = Field(max_length=255)
     asset_type: AssetType
     status: AssetStatus = "active"
     environment_id: UUID
-    team_id: str
+    team_id: AssetId
     description: str | None = None
-    service_ids: list[str] = Field(default_factory=list)
+    service_ids: list[AssetId] = Field(default_factory=list)
     ips: list[AssetIPInput] = Field(default_factory=list)
     endpoints: list[AssetEndpointInput] = Field(default_factory=list)
     detail: dict | None = None
