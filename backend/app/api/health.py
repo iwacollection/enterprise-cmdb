@@ -1,4 +1,8 @@
-"""Health check endpoint placeholder.
+from fastapi import APIRouter
 
-HTTP framework integration will be added after runtime dependency selection.
-"""
+router = APIRouter()
+
+
+@router.get("/health")
+def health():
+    return {"status": "ok"}
