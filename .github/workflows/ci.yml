@@ -32,3 +32,16 @@ jobs:
 
       - name: Test
         run: uv run pytest -q
+
+      - name: Verify migrations
+        env:
+          DATABASE_URL: sqlite+pysqlite:///./ci-migrations.db
+        run: |
+          rm -f ci-migrations.db
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Build container
+        run: docker build -t enterprise-cmdb:test .
