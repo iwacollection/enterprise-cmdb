@@ -1,6 +1,7 @@
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.domain.asset.model import Asset
 from app.domain.audit.model import ChangeRecord
 from app.domain.relation.model import AssetRelation
 from app.domain.relation.schema import AssetRelationCreate
@@ -9,6 +10,9 @@ from app.domain.relation.schema import AssetRelationCreate
 class AssetRelationRepository:
     def __init__(self, session: Session):
         self.session = session
+
+    def asset_exists(self, asset_id: str) -> bool:
+        return self.session.get(Asset, asset_id) is not None
 
     def list_for_asset(self, asset_id: str, direction: str) -> list[AssetRelation]:
         statement = select(AssetRelation)
