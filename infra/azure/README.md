@@ -5,8 +5,6 @@
 ```text
 GitHub Actions (OIDC)
         |
-        +--> Azure quota preflight / supported quota request
-        |
         +--> Azure Container Registry
         |
         +--> Azure Container Apps Environment -- VNet -- PostgreSQL Flexible Server
@@ -16,23 +14,26 @@ GitHub Actions (OIDC)
                      +-- enterprise-cmdb Container App
                          +-- init container: alembic upgrade head
                          +-- app container: FastAPI + Web Console
-                         +-- Entra EasyAuth before public ingress
 ```
 
 The application has no Azure SDK dependency. Azure concerns remain in `infra/azure` and GitHub Actions.
 
-## Network and identity baseline
+## Network baseline
 
 - Container Apps uses a dedicated VNet subnet delegated to `Microsoft.App/environments`.
-- PostgreSQL Flexible Server uses a separate delegated subnet and public network access is disabled.
+- PostgreSQL Flexible Server uses a separate delegated subnet.
+- PostgreSQL public network access is disabled.
 - PostgreSQL name resolution uses `privatelink.postgres.database.azure.com`.
+- Container App external ingress defaults to `false`.
 - ACR admin credentials and anonymous pull are disabled.
+- ACR `roleAssignmentMode` is explicitly pinned to `LegacyRegistryPermissions` so the legacy `AcrPull`/`AcrPush` roles used by this deployment remain deterministic if Azure changes the default mode in the future.
 - A user-assigned managed identity receives only `AcrPull` for application image pulls.
-- Production deployment creates the application privately, verifies Entra EasyAuth and app-role assignment requirements, and only then enables authenticated external ingress.
+
+The Container Apps environment remains externally capable so ingress can be enabled later without recreating the environment. The CMDB app itself stays non-public until an authentication policy is selected.
 
 ## Required GitHub production secrets
 
-The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). Configure these GitHub `production` environment secrets:
+The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). Configure these GitHub production environment secrets:
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
@@ -43,49 +44,35 @@ Do not store an Azure client secret in the repository.
 
 The deployment identity needs enough Azure RBAC permission to:
 
-1. create/update the selected resource group,
+1. create/update the selected resource group if the workflow is expected to create it,
 2. deploy the resources in that resource group,
 3. create the `AcrPull` role assignment for the Container App pull identity,
-4. push the built image to ACR,
-5. read Azure Container Apps quota usage,
-6. create supported Azure quota requests.
+4. push the built `enterprise-cmdb` image to the created registry.
 
-The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`. Image push requires `AcrPush`. Automatic quota requests require `Microsoft.Quota/quotas/write`; the built-in `Quota Request Operator` role is the intended least-privilege role for quota-request capability.
-
-The workflow validates all four required GitHub secrets before calling `azure/login`, so a missing secret is reported as a configuration error rather than an ambiguous OIDC login failure.
-
-## Quota-aware IaC policy
-
-Quota policy is versioned in `infra/azure/quota-policy.json` and evaluated by `infra/azure/quota_guard.py` before deployment.
-
-- `ManagedEnvironmentCount` is region scoped. If the target environment does not already exist and the region has no free environment slot, the workflow can submit a supported Azure Quota Management request and poll until capacity is usable.
-- `ManagedEnvironmentConsumptionCores` is environment scoped. Azure requires a manual request for this quota class, so the workflow detects shortage immediately after the environment exists and stops before image build with exact current, limit, available, and required values.
-
-The current environment policy reserves 1.5 free consumption cores, matching three application replicas at 0.5 core each. Update the quota policy together with application CPU or scaling changes.
+The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; plain `Contributor` alone is not sufficient for that operation. Image push requires `AcrPush` on this RBAC-only registry. Scope these permissions as narrowly as the organization's Azure governance model permits.
 
 ## Deployment workflow
 
-`.github/workflows/deploy-azure.yml` has two production entry points:
+Run `.github/workflows/deploy-azure.yml` manually.
 
-- manual `workflow_dispatch` for an explicitly requested deployment;
-- push to the dedicated `deploy/azure-production` branch when `.github/deploy-production` changes.
+Inputs:
 
-Normal pull requests validate the code, Bicep template, and quota decision logic but do not receive production deployment credentials.
+- resource group
+- Azure region
+- short resource prefix
+- external ingress toggle
 
-The production workflow performs:
+The workflow performs:
 
-1. Validate GitHub production secrets.
-2. OIDC login to Azure.
-3. Register/verify Azure quota tooling.
-4. Create/update the resource group.
-5. Check regional Container Apps quota and request supported capacity increases when needed.
-6. Deploy VNet, private PostgreSQL, ACR, managed identity, Log Analytics, and the Container Apps environment.
-7. Check environment consumption-core quota.
-8. Build and push the backend image.
-9. Deploy the CMDB privately with Entra authentication enabled.
-10. Verify EasyAuth and app-role assignment requirements.
-11. Enable authenticated external ingress.
-12. Verify an active revision, health endpoint, and authentication redirect.
+1. OIDC login to Azure.
+2. Create/update the resource group.
+3. Deploy VNet, private PostgreSQL, ACR, managed identity, Log Analytics, and Container Apps environment.
+4. Build the backend Docker image.
+5. Push the image to ACR.
+6. Deploy the Container App.
+7. Run Alembic through the Container App init container before the application starts.
+8. Verify an active revision exists.
+9. Run `/health` smoke test only when external ingress was explicitly enabled.
 
 ## Runtime database configuration
 
@@ -104,3 +91,11 @@ Azure sets database settings as separate environment variables so passwords with
 - `/health` proves the application process is alive.
 - `/ready` executes `SELECT 1` and proves the database is reachable.
 - Container Apps uses `/health` for liveness and `/ready` for readiness.
+
+## Production security gate
+
+`external_ingress=false` is intentional. Before changing it to `true`, configure the production authentication policy (for example Microsoft Entra ID through Container Apps built-in authentication or the company's existing identity gateway).
+
+Until authentication is connected, `X-CMDB-Actor` is a caller-supplied audit identity and must not be treated as a cryptographically verified user identity.
+
+Authentication and permission mapping are production security decisions and are not silently replaced by a shared password or hard-coded user list.
