@@ -1,14 +1,33 @@
 import os
 from dataclasses import dataclass
+from urllib.parse import quote_plus
+
+
+def _database_url() -> str:
+    explicit_url = os.environ.get("DATABASE_URL")
+    if explicit_url:
+        return explicit_url
+
+    host = os.environ.get("CMDB_DB_HOST")
+    if host is None:
+        return "sqlite+pysqlite:///./cmdb.db"
+
+    user = os.environ["CMDB_DB_USER"]
+    password = os.environ["CMDB_DB_PASSWORD"]
+    database = os.environ["CMDB_DB_NAME"]
+    port = os.environ.get("CMDB_DB_PORT", "5432")
+
+    return (
+        "postgresql+psycopg://"
+        f"{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{quote_plus(database)}"
+        "?sslmode=require"
+    )
 
 
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "enterprise-cmdb"
-    database_url: str = os.environ.get(
-        "DATABASE_URL",
-        "sqlite+pysqlite:///./cmdb.db",
-    )
+    database_url: str = _database_url()
 
 
 settings = Settings()
