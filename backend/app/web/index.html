@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enterprise CMDB</title>
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Enterprise CMDB</h1>
+      <p>Infrastructure Source of Truth</p>
+    </div>
+    <label>操作人 <input id="actor" value="cmdb-operator" autocomplete="off"></label>
+  </header>
+
+  <nav>
+    <button data-view="overview">Overview</button>
+    <button data-view="assets">Assets</button>
+    <button data-view="services">Services</button>
+    <button data-view="teams">Teams</button>
+    <button data-view="environments">Environments</button>
+    <button data-view="relations">Relations</button>
+    <button data-view="changes">Changes</button>
+  </nav>
+
+  <main>
+    <section id="overview" class="view"></section>
+    <section id="assets" class="view hidden"></section>
+    <section id="services" class="view hidden"></section>
+    <section id="teams" class="view hidden"></section>
+    <section id="environments" class="view hidden"></section>
+    <section id="relations" class="view hidden"></section>
+    <section id="changes" class="view hidden"></section>
+  </main>
+
+  <div id="message" class="message hidden"></div>
+  <script src="/ui/app.js"></script>
+</body>
+</html>
