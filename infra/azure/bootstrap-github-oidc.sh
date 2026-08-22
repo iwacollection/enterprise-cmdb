@@ -12,13 +12,14 @@ GRAPH_APP_ID="00000003-0000-0000-c000-000000000000"
 
 for command in az gh jq openssl; do
   command -v "$command" >/dev/null
- done
+done
 
 az account show >/dev/null
 gh auth status >/dev/null
 
 SUBSCRIPTION_ID=$(az account show --query id --output tsv)
 TENANT_ID=$(az account show --query tenantId --output tsv)
+SUBSCRIPTION_SCOPE="/subscriptions/${SUBSCRIPTION_ID}"
 
 mapfile -t DEPLOY_APP_IDS < <(
   az ad app list \
@@ -88,7 +89,21 @@ for role in "Contributor" "Role Based Access Control Administrator" "AcrPush"; d
       --scope "$RESOURCE_GROUP_ID" \
       --output none
   fi
- done
+done
+
+quota_assignment_count=$(az role assignment list \
+  --assignee "$SP_OBJECT_ID" \
+  --scope "$SUBSCRIPTION_SCOPE" \
+  --query "[?roleDefinitionName=='Quota Request Operator'] | length(@)" \
+  --output tsv)
+if [ "$quota_assignment_count" = "0" ]; then
+  az role assignment create \
+    --assignee-object-id "$SP_OBJECT_ID" \
+    --assignee-principal-type ServicePrincipal \
+    --role "Quota Request Operator" \
+    --scope "$SUBSCRIPTION_SCOPE" \
+    --output none
+fi
 
 GRAPH_PERMISSION_ID=$(az ad sp show \
   --id "$GRAPH_APP_ID" \
@@ -147,4 +162,5 @@ gh workflow run deploy-azure.yml \
 
 echo "Azure OIDC bootstrap completed and production deployment was triggered."
 echo "Deployment application client ID: $CLIENT_ID"
+echo "Resource-group deployment roles and subscription-level Quota Request Operator were configured."
 echo "Tenant ID and subscription ID were written to GitHub environment secrets and are not printed."
