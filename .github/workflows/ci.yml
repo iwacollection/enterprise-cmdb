@@ -45,3 +45,7 @@ jobs:
 
       - name: Build container
         run: docker build -t enterprise-cmdb:test .
+
+      - name: Validate Azure Bicep
+        working-directory: ${{ github.workspace }}
+        run: az bicep build --file infra/azure/main.bicep --stdout > /dev/null
