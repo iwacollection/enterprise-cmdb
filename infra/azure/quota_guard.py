@@ -8,18 +8,34 @@ from typing import Any
 
 
 def _load_usage(path: str) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(document, dict):
+        return document
+    if isinstance(document, list):
+        return {"value": document}
+    raise ValueError("unexpected quota usage response format")
+
+
+def _usage_items(document: dict[str, Any]) -> list[dict[str, Any]]:
+    items = document.get("value", [])
+    if isinstance(items, dict):
+        items = [items]
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
 
 
 def _usage_item(document: dict[str, Any], resource_name: str) -> dict[str, Any]:
-    for item in document.get("value", []):
-        if not isinstance(item, dict):
-            continue
+    for item in _usage_items(document):
         name = item.get("name", {})
         if isinstance(name, dict) and (
             name.get("value") == resource_name
             or name.get("localizedValue") == resource_name
         ):
+            return item
+        if isinstance(name, str) and name == resource_name:
+            return item
+        if item.get("resourceName") == resource_name:
             return item
     raise ValueError(f"quota usage entry not found: {resource_name}")
 
@@ -56,7 +72,7 @@ def _parser():
     r.add_argument("--request-increment", type=int, required=True)
     e = sub.add_parser("environment")
     e.add_argument("--usage-file", required=True)
-    e.add_argument("--resource-name", default="ManagedEnvironmentConsumptionCores")
+    e.add.add_argument("--resource-name", default="ManagedEnvironmentConsumptionCores")
     e.add_argument("--required-available", type=float, required=True)
     return parser
 
