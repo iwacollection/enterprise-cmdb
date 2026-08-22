@@ -1,4 +1,3 @@
-from app.domain.team.model import Team
 from app.domain.team.schema import TeamCreate, TeamUpdate
 from app.domain.team.service import TeamService
 
