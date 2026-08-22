@@ -63,8 +63,12 @@ def create_asset(
     context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
+    service = get_asset_service(session)
+    error = service.reference_error(payload)
+    if error is not None:
+        raise HTTPException(status_code=404, detail=error)
     actor, request_id = context
-    return get_asset_service(session).create_asset(payload, request_id, actor)
+    return service.create_asset(payload, request_id, actor)
 
 
 @router.put("/{asset_id}", response_model=AssetResponse)
@@ -74,8 +78,11 @@ def update_asset(
     context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
-    actor, request_id = context
-    asset = get_asset_service(session).update_asset(asset_id, payload, request_id, actor)
-    if asset is None:
+    service = get_asset_service(session)
+    if service.get_asset(asset_id) is None:
         raise HTTPException(status_code=404, detail="Asset not found")
-    return asset
+    error = service.reference_error(payload)
+    if error is not None:
+        raise HTTPException(status_code=404, detail=error)
+    actor, request_id = context
+    return service.update_asset(asset_id, payload, request_id, actor)
