@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.auth import require_reader
 from app.database.dependency import get_session
 from app.domain.audit.repository import ChangeRecordRepository
 from app.domain.audit.schema import ChangeRecordResponse
 from app.domain.audit.service import ChangeRecordService
 
 
-router = APIRouter(prefix="/changes", tags=["changes"])
+router = APIRouter(prefix="/changes", tags=["changes"], dependencies=[Depends(require_reader)])
 
 
 def get_audit_service(session: Session) -> ChangeRecordService:
