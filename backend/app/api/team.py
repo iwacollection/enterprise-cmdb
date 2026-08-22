@@ -34,8 +34,11 @@ def create_team(
     context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
+    service = get_service(session)
+    if service.name_in_use(payload.name):
+        raise HTTPException(status_code=409, detail="Team name already exists")
     actor, request_id = context
-    return get_service(session).create_team(payload, request_id, actor)
+    return service.create_team(payload, request_id, actor)
 
 
 @router.put("/{team_id}", response_model=TeamResponse)
@@ -49,6 +52,8 @@ def update_team(
     team = service.get_team(team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
+    if service.name_in_use(payload.name, team_id):
+        raise HTTPException(status_code=409, detail="Team name already exists")
     actor, request_id = context
     return service.update_team(team, payload, request_id, actor)
 
