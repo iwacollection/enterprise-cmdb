@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.service.repository import ServiceRepository
 from app.domain.service.schema import ServiceCreate, ServiceResponse, ServiceUpdate
@@ -28,28 +29,40 @@ def get_service(service_id: str, session: Session = Depends(get_session)):
 
 
 @router.post("", response_model=ServiceResponse, status_code=201)
-def create_service(payload: ServiceCreate, session: Session = Depends(get_session)):
-    return get_service_layer(session).create_service(payload)
+def create_service(
+    payload: ServiceCreate,
+    context: tuple[str, str] = Depends(request_context),
+    session: Session = Depends(get_session),
+):
+    actor, request_id = context
+    return get_service_layer(session).create_service(payload, request_id, actor)
 
 
 @router.put("/{service_id}", response_model=ServiceResponse)
 def update_service(
     service_id: str,
     payload: ServiceUpdate,
+    context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
     layer = get_service_layer(session)
     service = layer.get_service(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail="Service not found")
-    return layer.update_service(service, payload)
+    actor, request_id = context
+    return layer.update_service(service, payload, request_id, actor)
 
 
 @router.delete("/{service_id}", status_code=204)
-def delete_service(service_id: str, session: Session = Depends(get_session)):
+def delete_service(
+    service_id: str,
+    context: tuple[str, str] = Depends(request_context),
+    session: Session = Depends(get_session),
+):
     layer = get_service_layer(session)
     service = layer.get_service(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail="Service not found")
-    layer.delete_service(service)
+    actor, request_id = context
+    layer.delete_service(service, request_id, actor)
     return Response(status_code=204)
