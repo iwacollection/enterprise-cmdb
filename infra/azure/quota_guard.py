@@ -37,7 +37,14 @@ def _usage_item(document: dict[str, Any], resource_name: str) -> dict[str, Any]:
             return item
         if item.get("resourceName") == resource_name:
             return item
-    raise ValueError(f"quota usage entry not found: {resource_name}")
+
+    # Azure quota APIs may omit resources that have not been allocated yet.
+    # Treat missing usage entries as zero usage instead of failing deployment.
+    return {
+        "name": {"value": resource_name},
+        "currentValue": 0,
+        "limit": 0,
+    }
 
 
 def _numbers(item: dict[str, Any]) -> tuple[float, float]:
