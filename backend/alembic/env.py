@@ -4,7 +4,10 @@ from alembic import context
 
 from app.config.settings import settings
 from app.database.base import Base
+from app.domain.asset import model as asset_model
+from app.domain.audit import model as audit_model
 from app.domain.environment import model as environment_model
+from app.domain.relation import model as relation_model
 from app.domain.service import model as service_model
 from app.domain.team import model as team_model
 
