@@ -6,9 +6,11 @@ The CI gate must pass:
 
 - dependency installation with uv
 - Ruff checks for backend application and tests
-- Pytest including repository persistence tests
-- end-to-end API flow covering Environment -> Team -> Service -> Asset -> Relation -> ChangeRecord
+- Pytest including repository persistence and end-to-end API tests
+- Alembic upgrade -> schema drift check -> downgrade -> upgrade
+- Docker image build
+- Web console entrypoint
 
 A failed gate is treated as a development defect and must be fixed before deployment work proceeds.
 
-Validation iteration 3 verifies the FastAPI route test fixes against the latest main branch.
+Validation iteration 4 verifies the complete CMDB V0.3 delivery gates against the latest main branch.
