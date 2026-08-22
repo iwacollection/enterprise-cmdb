@@ -1,3 +1,6 @@
+from decimal import Decimal
+from uuid import UUID
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -31,8 +34,29 @@ class AssetRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def list(self) -> list[dict]:
-        assets = self.session.scalars(select(Asset).order_by(Asset.name)).all()
+    def list(
+        self,
+        name: str | None = None,
+        asset_type: str | None = None,
+        status: str | None = None,
+        environment_id: UUID | None = None,
+        team_id: str | None = None,
+        service_id: str | None = None,
+    ) -> list[dict]:
+        statement = select(Asset)
+        if service_id is not None:
+            statement = statement.join(AssetService).where(AssetService.service_id == service_id)
+        if name is not None:
+            statement = statement.where(Asset.name.ilike(f"%{name}%"))
+        if asset_type is not None:
+            statement = statement.where(Asset.asset_type == asset_type)
+        if status is not None:
+            statement = statement.where(Asset.status == status)
+        if environment_id is not None:
+            statement = statement.where(Asset.environment_id == environment_id)
+        if team_id is not None:
+            statement = statement.where(Asset.team_id == team_id)
+        assets = self.session.scalars(statement.distinct().order_by(Asset.name)).all()
         return [self._snapshot(asset) for asset in assets]
 
     def get_by_id(self, asset_id: str) -> dict | None:
@@ -212,6 +236,6 @@ class AssetRepository:
     def _json_value(value):
         if hasattr(value, "isoformat"):
             return value.isoformat()
-        if hasattr(value, "as_integer_ratio") and value.__class__.__name__ == "Decimal":
+        if isinstance(value, Decimal):
             return float(value)
         return value
