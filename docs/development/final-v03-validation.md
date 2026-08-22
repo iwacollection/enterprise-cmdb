@@ -9,10 +9,11 @@ Required checks:
 - Web console JavaScript syntax
 - Pytest
 - Alembic upgrade / drift check / downgrade / upgrade
-- Docker Compose validation
+- Docker Compose configuration
+- real PostgreSQL 16 + Alembic + FastAPI `/health` and `/ready` smoke test
 - Docker image build with frozen dependencies
 - Azure Bicep compile
 
 Any failure is treated as a development defect and must be fixed before V0.3 core is considered complete.
 
-Validation iteration 6 is the authoritative final technical delivery gate against the latest main branch, including the committed uv.lock and frozen CI/Docker installs.
+Validation iteration 7 is the authoritative final technical delivery gate against the latest main branch.
