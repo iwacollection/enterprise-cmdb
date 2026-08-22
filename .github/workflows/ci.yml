@@ -30,6 +30,9 @@ jobs:
       - name: Lint
         run: uv run ruff check app tests
 
+      - name: Validate web console
+        run: node --check app/web/app.js
+
       - name: Test
         run: uv run pytest -q
 
@@ -42,6 +45,9 @@ jobs:
           uv run alembic check
           uv run alembic downgrade base
           uv run alembic upgrade head
+
+      - name: Validate compose runtime
+        run: docker compose config -q
 
       - name: Build container
         run: docker build -t enterprise-cmdb:test .
