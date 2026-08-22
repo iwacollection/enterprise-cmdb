@@ -2,5 +2,7 @@ from app.main import app
 
 
 def test_environment_route_registered():
-    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    paths = app.openapi()["paths"]
     assert "/environments" in paths
+    assert "get" in paths["/environments"]
+    assert "post" in paths["/environments"]
