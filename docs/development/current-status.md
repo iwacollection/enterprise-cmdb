@@ -31,7 +31,7 @@
 - PostgreSQL runtime
 - Alembic 001-006 migrations
 - Docker image
-- Docker Compose local runtime
+- Docker Compose local runtime with API readiness healthcheck
 - `uv.lock` reproducible dependency graph
 
 ### Verification
@@ -47,8 +47,11 @@ GitHub Actions validates:
 7. Alembic downgrade to base
 8. Alembic upgrade to head
 9. Docker Compose configuration
-10. Docker build using frozen dependencies
-11. Azure Bicep compile
+10. Real PostgreSQL 16 + Alembic + FastAPI `/health` and `/ready` smoke test
+11. Docker build using frozen dependencies
+12. Azure Bicep compile
+
+Final V0.3 technical validation result: `28 passed`, PostgreSQL runtime smoke succeeded, and Azure Bicep compilation succeeded. The only remaining pytest warning originates from the third-party FastAPI/Starlette TestClient compatibility layer; project-owned `datetime.utcnow()` warnings have been removed.
 
 ### Azure
 
