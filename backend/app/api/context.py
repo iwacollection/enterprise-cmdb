@@ -1,10 +1,12 @@
 from uuid import uuid4
 
-from fastapi import Header
+from fastapi import Depends, Header
+
+from app.api.auth import Principal, require_admin
 
 
 def request_context(
-    actor: str = Header(alias="X-CMDB-Actor", max_length=255),
+    principal: Principal = Depends(require_admin),
     request_id: str | None = Header(default=None, alias="X-Request-ID", max_length=64),
 ) -> tuple[str, str]:
-    return actor, request_id or str(uuid4())
+    return principal.actor, request_id or str(uuid4())
