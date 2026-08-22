@@ -1,17 +1,17 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ServiceCreate(BaseModel):
-    name: str
-    team_id: str
+    name: str = Field(max_length=128)
+    team_id: str = Field(max_length=36)
     description: str | None = None
 
 
 class ServiceUpdate(BaseModel):
-    name: str
-    team_id: str
+    name: str = Field(max_length=128)
+    team_id: str = Field(max_length=36)
     description: str | None = None
 
 
