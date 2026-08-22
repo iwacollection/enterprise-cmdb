@@ -4,12 +4,12 @@ from alembic import context
 
 from app.config.settings import settings
 from app.database.base import Base
-from app.domain.asset import model as asset_model
-from app.domain.audit import model as audit_model
-from app.domain.environment import model as environment_model
-from app.domain.relation import model as relation_model
-from app.domain.service import model as service_model
-from app.domain.team import model as team_model
+from app.domain.asset import model as asset_model  # noqa: F401
+from app.domain.audit import model as audit_model  # noqa: F401
+from app.domain.environment import model as environment_model  # noqa: F401
+from app.domain.relation import model as relation_model  # noqa: F401
+from app.domain.service import model as service_model  # noqa: F401
+from app.domain.team import model as team_model  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
