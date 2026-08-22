@@ -5,8 +5,7 @@ async function api(path, options = {}) {
   const headers = {"Content-Type": "application/json", ...(options.headers || {})};
   if (!['GET', 'HEAD'].includes(method)) {
     const actor = $("#actor").value.trim();
-    if (!actor) throw new Error("写操作前请填写操作人");
-    headers["X-CMDB-Actor"] = actor;
+    if (actor) headers["X-CMDB-Actor"] = actor;
   }
   const response = await fetch(path, {...options, method, headers});
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
