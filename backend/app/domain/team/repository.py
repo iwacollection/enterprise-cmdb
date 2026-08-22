@@ -17,6 +17,12 @@ class TeamRepository:
     def get_by_id(self, team_id: str) -> Team | None:
         return self.session.get(Team, team_id)
 
+    def name_in_use(self, name: str, exclude_id: str | None = None) -> bool:
+        statement = select(Team.id).where(Team.name == name)
+        if exclude_id is not None:
+            statement = statement.where(Team.id != exclude_id)
+        return self.session.scalar(statement.limit(1)) is not None
+
     def is_referenced(self, team_id: str) -> bool:
         service_reference = self.session.scalar(
             select(Service.id).where(Service.team_id == team_id).limit(1)
