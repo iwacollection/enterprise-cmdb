@@ -58,6 +58,9 @@ jobs:
       NAME_PREFIX: cmdb
       EXTERNAL_INGRESS: "false"
       AUTO_REQUEST_QUOTA: "true"
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       POSTGRES_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
 
     steps:
@@ -73,15 +76,25 @@ jobs:
           echo "EXTERNAL_INGRESS=${{ inputs.external_ingress }}" >> "$GITHUB_ENV"
           echo "AUTO_REQUEST_QUOTA=${{ inputs.auto_request_quota }}" >> "$GITHUB_ENV"
 
+      - name: Validate Azure deployment credentials
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$AZURE_CLIENT_ID" ]] || missing+=(AZURE_CLIENT_ID)
+          [[ -n "$AZURE_TENANT_ID" ]] || missing+=(AZURE_TENANT_ID)
+          [[ -n "$AZURE_SUBSCRIPTION_ID" ]] || missing+=(AZURE_SUBSCRIPTION_ID)
+          [[ -n "$POSTGRES_PASSWORD" ]] || missing+=(AZURE_POSTGRES_ADMIN_PASSWORD)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing GitHub production secrets: ${missing[*]}. Configure them in the repository production environment before Azure deployment can run."
+            exit 1
+          fi
+
       - name: Azure login with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Validate required secret
-        run: test -n "$POSTGRES_PASSWORD"
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Ensure Azure quota tooling
         run: |
