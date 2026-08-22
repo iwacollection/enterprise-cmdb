@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.environment.repository import EnvironmentRepository
 from app.domain.environment.schema import EnvironmentCreate, EnvironmentResponse, EnvironmentUpdate
@@ -31,19 +32,23 @@ def get_environment(environment_id: UUID, session: Session = Depends(get_session
 @router.post("", response_model=EnvironmentResponse, status_code=201)
 def create_environment(
     data: EnvironmentCreate,
+    context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
-    return get_service(session).create_environment(data)
+    actor, request_id = context
+    return get_service(session).create_environment(data, request_id, actor)
 
 
 @router.put("/{environment_id}", response_model=EnvironmentResponse)
 def update_environment(
     environment_id: UUID,
     data: EnvironmentUpdate,
+    context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
     service = get_service(session)
     environment = service.get_environment(environment_id)
     if environment is None:
         raise HTTPException(status_code=404, detail="Environment not found")
-    return service.update_environment(environment, data)
+    actor, request_id = context
+    return service.update_environment(environment, data, request_id, actor)
