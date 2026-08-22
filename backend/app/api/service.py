@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.auth import require_reader
 from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.service.repository import ServiceRepository
@@ -8,7 +9,7 @@ from app.domain.service.schema import ServiceCreate, ServiceResponse, ServiceUpd
 from app.domain.service.service import ServiceService
 
 
-router = APIRouter(prefix="/services", tags=["services"])
+router = APIRouter(prefix="/services", tags=["services"], dependencies=[Depends(require_reader)])
 
 
 def get_service_layer(session: Session) -> ServiceService:
