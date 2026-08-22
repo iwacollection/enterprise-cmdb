@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.environment.model import Environment
@@ -8,4 +9,4 @@ class EnvironmentRepository:
         self.session = session
 
     def list(self) -> list[Environment]:
-        return self.session.query(Environment).all()
+        return list(self.session.scalars(select(Environment)).all())
