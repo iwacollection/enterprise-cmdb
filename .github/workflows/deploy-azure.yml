@@ -1,0 +1,142 @@
+name: Deploy Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: Azure resource group
+        required: true
+        default: rg-enterprise-cmdb
+        type: string
+      location:
+        description: Azure region
+        required: true
+        default: eastasia
+        type: string
+      name_prefix:
+        description: Short alphanumeric resource prefix
+        required: true
+        default: cmdb
+        type: string
+      external_ingress:
+        description: Expose the CMDB app outside the Container Apps environment
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-azure-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      RESOURCE_GROUP: ${{ inputs.resource_group }}
+      LOCATION: ${{ inputs.location }}
+      NAME_PREFIX: ${{ inputs.name_prefix }}
+      POSTGRES_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate required secret
+        run: test -n "$POSTGRES_PASSWORD"
+
+      - name: Ensure resource group
+        run: |
+          az group create \
+            --name "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            --output none
+
+      - name: Deploy Azure foundation
+        id: foundation
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/azure/main.bicep \
+            --parameters \
+              namePrefix="$NAME_PREFIX" \
+              location="$LOCATION" \
+              deployContainerApp=false \
+              postgresAdministratorPassword="$POSTGRES_PASSWORD" \
+            --query properties.outputs \
+            --output json)
+
+          acr_name=$(echo "$outputs" | jq -r '.acrName.value')
+          acr_server=$(echo "$outputs" | jq -r '.acrLoginServer.value')
+          echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
+          echo "acr_server=$acr_server" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name "${{ steps.foundation.outputs.acr_name }}"
+
+      - name: Build and push CMDB image
+        id: image
+        env:
+          ACR_SERVER: ${{ steps.foundation.outputs.acr_server }}
+        run: |
+          image="$ACR_SERVER/enterprise-cmdb:${GITHUB_SHA}"
+          docker build --file backend/Dockerfile --tag "$image" backend
+          docker push "$image"
+          echo "uri=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy CMDB application
+        env:
+          CONTAINER_IMAGE: ${{ steps.image.outputs.uri }}
+          EXTERNAL_INGRESS: ${{ inputs.external_ingress }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/azure/main.bicep \
+            --parameters \
+              namePrefix="$NAME_PREFIX" \
+              location="$LOCATION" \
+              deployContainerApp=true \
+              externalIngressEnabled="$EXTERNAL_INGRESS" \
+              containerImage="$CONTAINER_IMAGE" \
+              postgresAdministratorPassword="$POSTGRES_PASSWORD" \
+            --output none
+
+      - name: Verify Container App revision
+        run: |
+          app_name="${NAME_PREFIX}-app"
+          revision=$(az containerapp revision list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$app_name" \
+            --query "[?properties.active].name | [0]" \
+            --output tsv)
+          test -n "$revision"
+          echo "Active revision: $revision"
+
+      - name: Print private deployment result
+        if: ${{ !inputs.external_ingress }}
+        run: |
+          echo "CMDB deployed with external ingress disabled."
+          echo "Enable public ingress only after the production authentication policy is configured."
+
+      - name: Smoke test external endpoint
+        if: ${{ inputs.external_ingress }}
+        run: |
+          fqdn=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "${NAME_PREFIX}-app" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          test -n "$fqdn"
+          curl --fail --silent --show-error --retry 10 --retry-delay 5 "https://${fqdn}/health"
+          echo "CMDB URL: https://${fqdn}/ui/"
