@@ -51,14 +51,18 @@ def test_relation_type_rejects_values_larger_than_database_column():
         )
 
 
+def _string_schema(schema: dict) -> dict:
+    if schema.get("type") == "string":
+        return schema
+    return next(item for item in schema.get("anyOf", []) if item.get("type") == "string")
+
+
 def test_audit_header_limits_are_part_of_openapi_contract():
     operation = app.openapi()["paths"]["/environments"]["post"]
     parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
 
-    assert parameters["X-CMDB-Actor"]["schema"]["maxLength"] == 255
+    actor_schema = _string_schema(parameters["X-CMDB-Actor"]["schema"])
+    assert actor_schema["maxLength"] == 255
 
-    request_id_schema = parameters["X-Request-ID"]["schema"]
-    request_id_string_schema = next(
-        item for item in request_id_schema["anyOf"] if item.get("type") == "string"
-    )
-    assert request_id_string_schema["maxLength"] == 64
+    request_id_schema = _string_schema(parameters["X-Request-ID"]["schema"])
+    assert request_id_schema["maxLength"] == 64
