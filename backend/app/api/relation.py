@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
+from app.api.auth import require_reader
 from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.relation.repository import AssetRelationRepository
@@ -10,7 +11,7 @@ from app.domain.relation.schema import AssetRelationCreate, AssetRelationRespons
 from app.domain.relation.service import AssetRelationService
 
 
-router = APIRouter(tags=["relations"])
+router = APIRouter(tags=["relations"], dependencies=[Depends(require_reader)])
 
 
 def get_relation_service(session: Session) -> AssetRelationService:
