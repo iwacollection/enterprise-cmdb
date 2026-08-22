@@ -1,12 +1,15 @@
 from uuid import UUID
 
 from app.domain.asset.repository import AssetRepository
-from app.domain.asset.schema import AssetCreate, AssetUpdate
+from app.domain.asset.schema import AssetCreate, AssetUpdate, AssetWrite
 
 
 class AssetService:
     def __init__(self, repository: AssetRepository):
         self.repository = repository
+
+    def reference_error(self, data: AssetWrite) -> str | None:
+        return self.repository.reference_error(data)
 
     def list_assets(
         self,
