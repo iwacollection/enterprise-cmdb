@@ -1,9 +1,9 @@
 # Last Azure Production Deployment
 
 status: failure
-run_id: 32583001170
+run_id: 32583531509
 run_attempt: 1
-commit: b53456bdc60c1d5229916d2473d1452c43b2098b
+commit: 6eba22e16c07d91f0869a799f96d433514c8e162
 resource_group: rg-enterprise-cmdb
 location: eastasia
 name_prefix: cmdb
