@@ -5,6 +5,8 @@
 ```text
 GitHub Actions (OIDC)
         |
+        +--> Azure quota preflight / supported quota request
+        |
         +--> Azure Container Registry
         |
         +--> Azure Container Apps Environment -- VNet -- PostgreSQL Flexible Server
@@ -71,6 +73,8 @@ The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). Conf
 
 Do not store an Azure client secret in the repository.
 
+The workflow validates all four values before `azure/login`, so missing credentials fail with the exact secret names instead of an ambiguous OIDC error.
+
 ## Deployment identity permissions
 
 The GitHub OIDC deployment identity needs Azure RBAC permission to:
@@ -78,32 +82,48 @@ The GitHub OIDC deployment identity needs Azure RBAC permission to:
 1. create/update the selected resource group if the workflow creates it,
 2. deploy the resources in that resource group,
 3. create the `AcrPull` role assignment for the Container App pull identity,
-4. push the built `enterprise-cmdb` image to ACR.
+4. push the built `enterprise-cmdb` image to ACR,
+5. read Azure Container Apps quota usage,
+6. submit supported quota increase requests.
 
-The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; plain `Contributor` alone is not sufficient for that operation. Image push requires `AcrPush` on this RBAC-only registry.
+The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; plain `Contributor` alone is not sufficient for that operation. Image push requires `AcrPush` on this RBAC-only registry. Automatic quota requests require `Microsoft.Quota/quotas/write`; use the built-in `Quota Request Operator` role when a separate least-privilege assignment is appropriate.
 
 The same deployment identity also needs Microsoft Graph application permission to create/update the Entra application and service principal through the Microsoft Graph Bicep extension. Prefer the least-privilege `Application.ReadWrite.OwnedBy` permission with tenant admin consent when organizational policy permits it; `Application.ReadWrite.All` is broader and should not be granted merely for convenience.
 
 This deployment intentionally does **not** assign real users or groups to `CMDB.Reader` or `CMDB.Admin`. Automating that would require additional Graph app-role-assignment permission and a concrete tenant principal ID. Those privileges and mappings are not guessed by the repository.
 
+## Quota-aware IaC policy
+
+Quota requirements are versioned in `infra/azure/quota-policy.json` and evaluated by `infra/azure/quota_guard.py` before expensive deployment steps.
+
+- `ManagedEnvironmentCount` is region scoped. If the target Container Apps environment does not already exist and the selected region has no free environment slot, the workflow can submit an Azure Quota Management request and poll until the new limit becomes usable.
+- `ManagedEnvironmentConsumptionCores` is environment scoped. Azure treats this quota as a manual-request class, so the workflow detects insufficient capacity immediately after the environment is created and stops before image build with exact `current`, `limit`, `available`, and `requiredAvailable` values.
+
+The current policy reserves 1.5 free consumption cores, matching three application replicas at 0.5 core each. Application CPU or scaling changes must update this policy in the same change set.
+
 ## Deployment workflow
 
-`.github/workflows/deploy-azure.yml` can run manually or from the dedicated `deploy/azure-production` trigger branch.
+`.github/workflows/deploy-azure.yml` can run manually or from the dedicated `deploy/azure-production` trigger branch. Normal pull requests validate application code, Bicep, and quota decision logic but do not receive production deployment credentials.
 
 The production sequence is fail-closed:
 
-1. OIDC login to Azure.
-2. Create/update the resource group.
-3. Deploy VNet, private PostgreSQL, ACR, identities, Log Analytics, and Container Apps environment.
-4. Build and push the frozen-dependency backend image.
-5. Deploy the Container App with external ingress disabled and `CMDB_AUTH_MODE=entra`.
-6. Create the Entra application, App Roles, service principal, FIC, and Container Apps auth config.
-7. Verify EasyAuth is enabled and `appRoleAssignmentRequired=true`.
-8. Only then enable external ingress.
-9. Verify an active revision exists.
-10. Verify `/health` is reachable and an unauthenticated `/ui/` request is redirected to login.
+1. Validate required GitHub production secrets.
+2. OIDC login to Azure.
+3. Register/verify Azure quota tooling.
+4. Create/update the resource group.
+5. Check regional Container Apps quota and request supported capacity increases when required.
+6. Deploy VNet, private PostgreSQL, ACR, identities, Log Analytics, and Container Apps environment.
+7. Check environment consumption-core quota before image build.
+8. Build and push the frozen-dependency backend image.
+9. Deploy the Container App with external ingress disabled and `CMDB_AUTH_MODE=entra`.
+10. Create the Entra application, App Roles, service principal, FIC, and Container Apps auth config.
+11. Verify EasyAuth is enabled and `appRoleAssignmentRequired=true`.
+12. Only then enable external ingress.
+13. Verify an active revision exists.
+14. Verify `/health` is reachable and an unauthenticated `/ui/` request is redirected to login.
+15. Persist the production run result to `docs/deployment/last-azure-production-status.md` on the dedicated deployment branch so the last run can be inspected without opening Actions first.
 
-A failure before step 8 leaves the CMDB non-public.
+A failure before external-ingress enablement leaves the CMDB non-public. The status-publish step runs with `always()` on the dedicated deployment branch, so both successful and failed production attempts leave an auditable run pointer.
 
 ## Assign first users
 
