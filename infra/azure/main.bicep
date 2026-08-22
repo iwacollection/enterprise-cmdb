@@ -158,6 +158,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2025-11-01' = {
     anonymousPullEnabled: false
     dataEndpointEnabled: false
     publicNetworkAccess: 'Enabled'
+    roleAssignmentMode: 'LegacyRegistryPermissions'
     zoneRedundancy: 'Disabled'
   }
 }
