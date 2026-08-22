@@ -8,6 +8,11 @@ class TeamCreate(BaseModel):
     description: str | None = None
 
 
+class TeamUpdate(BaseModel):
+    name: str
+    description: str | None = None
+
+
 class TeamResponse(BaseModel):
     id: str
     name: str
