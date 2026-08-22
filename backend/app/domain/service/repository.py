@@ -17,6 +17,12 @@ class ServiceRepository:
     def get_by_id(self, service_id: str) -> Service | None:
         return self.session.get(Service, service_id)
 
+    def name_in_use(self, name: str, exclude_id: str | None = None) -> bool:
+        statement = select(Service.id).where(Service.name == name)
+        if exclude_id is not None:
+            statement = statement.where(Service.id != exclude_id)
+        return self.session.scalar(statement.limit(1)) is not None
+
     def team_exists(self, team_id: str) -> bool:
         return self.session.get(Team, team_id) is not None
 
