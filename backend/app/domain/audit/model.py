@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
+from app.database.time import utc_now
 
 
 class ChangeRecord(Base):
@@ -18,4 +19,4 @@ class ChangeRecord(Base):
     changed_by: Mapped[str] = mapped_column(String(255), nullable=False)
     before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False, index=True)
