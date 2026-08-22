@@ -2,30 +2,75 @@
 
 ## Current Phase
 
-Phase 2.6 - Runtime Verification Preparation
+**V0.3 Domain Core complete. Azure deployment path validated.**
 
 ## Completed
 
-- Repository structure
-- Backend application boundary
-- Configuration boundary
-- Database boundary
-- SQLAlchemy base boundary
-- Alembic structure
-- Local PostgreSQL runtime definition
+### Domain
 
-## Next Execution Tasks
+- Environment CRUD boundary
+- Team CRUD boundary
+- Service CRUD boundary
+- Asset aggregate
+- Asset N:M Service mapping
+- IP / Endpoint child entities
+- Compute / Database / Redis / Message Queue / Kubernetes detail models
+- Asset relation graph
+- Transactional audit for Environment / Team / Service / Asset / AssetRelation
+- Reference boundary handling for Asset / Team / Service
 
-1. Complete Alembic environment wiring
-2. Add Environment ORM model
-3. Generate first migration
-4. Verify upgrade/downgrade cycle
-5. Add API layer for Environment CRUD
-6. Continue Team, Service, Asset domains
+### Runtime
 
-## Constraints
+- FastAPI REST API
+- Web Console
+- `/health` liveness
+- `/ready` database readiness
+- SQLAlchemy 2.x
+- PostgreSQL runtime
+- Alembic 001-006 migrations
+- Docker image
+- Docker Compose local runtime
 
-- No speculative features
-- No hidden fallback behavior
-- Schema changes require migrations
-- Every feature requires tests and verification
+### Verification
+
+GitHub Actions validates:
+
+1. Ruff
+2. Pytest unit / repository / API / end-to-end tests
+3. Alembic upgrade
+4. Alembic schema drift check
+5. Alembic downgrade to base
+6. Alembic upgrade to head
+7. Docker build
+8. Azure Bicep compile
+
+### Azure
+
+- Azure Container Registry
+- Azure Container Apps environment
+- User-assigned identity + AcrPull
+- VNet and delegated subnets
+- Private PostgreSQL Flexible Server
+- Private DNS
+- Log Analytics
+- Container App init migration
+- Liveness / readiness probes
+- GitHub Actions OIDC deployment workflow
+
+## Production Gate
+
+Before enabling external ingress, the following requires an explicit business/security decision:
+
+1. Authentication provider (Microsoft Entra ID or existing company SSO)
+2. Permission model and identity-to-role mapping
+
+The current Azure template therefore defaults to `externalIngressEnabled=false`.
+
+## Engineering Constraints
+
+- No speculative domain fields
+- No silent fallback behavior
+- Schema changes require design update + migration
+- Core writes require transactional audit
+- System-boundary input errors must be explicit
+- Every deployment path must be machine validated
