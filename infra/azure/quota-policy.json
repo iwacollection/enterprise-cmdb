@@ -1,0 +1,19 @@
+{
+  "containerApps": {
+    "regional": {
+      "ManagedEnvironmentCount": {
+        "minimumLimit": 1,
+        "requestIncrement": 1,
+        "autoRequest": true,
+        "pollAttempts": 30,
+        "pollSeconds": 10
+      }
+    },
+    "environment": {
+      "ManagedEnvironmentConsumptionCores": {
+        "requiredAvailable": 1.5,
+        "requestMode": "manual"
+      }
+    }
+  }
+}

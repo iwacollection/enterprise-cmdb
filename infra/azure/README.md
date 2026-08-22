@@ -5,6 +5,8 @@
 ```text
 GitHub Actions (OIDC)
         |
+        +--> Azure quota preflight / supported quota request
+        |
         +--> Azure Container Registry
         |
         +--> Azure Container Apps Environment -- VNet -- PostgreSQL Flexible Server
@@ -94,41 +96,56 @@ The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). Thes
 - `AZURE_SUBSCRIPTION_ID`
 - `AZURE_POSTGRES_ADMIN_PASSWORD`
 
-The bootstrap script sets them. Do not store an Azure client secret in the repository.
+The bootstrap script sets them. The workflow also validates all four values before `azure/login`, so a missing value fails with its exact secret name. Do not store an Azure client secret in the repository.
 
 ## Deployment identity permissions
 
 The GitHub OIDC deployment identity needs Azure RBAC permission to:
 
-1. deploy the resources in the selected resource group,
+1. deploy resources in the selected resource group,
 2. create the `AcrPull` role assignment for the Container App pull identity,
-3. push the built `enterprise-cmdb` image to ACR.
+3. push the built `enterprise-cmdb` image to ACR,
+4. read Azure Container Apps quota usage,
+5. submit supported quota increase requests.
 
-The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; `Role Based Access Control Administrator` supplies that action without the broader authorization surface of `User Access Administrator`. Image push requires `AcrPush` on this RBAC-only registry.
+The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; `Role Based Access Control Administrator` supplies that action without the broader authorization surface of `User Access Administrator`. Image push requires `AcrPush` on this RBAC-only registry. Automatic quota requests require `Microsoft.Quota/quotas/write`; use `Quota Request Operator` when a separate least-privilege quota assignment is appropriate.
 
 The same deployment identity also needs Microsoft Graph application permission to create/update the Entra application and service principal through the Microsoft Graph Bicep extension. The bootstrap requests the least-privilege `Application.ReadWrite.OwnedBy` permission with tenant admin consent rather than `Application.ReadWrite.All`.
 
 This deployment intentionally does **not** assign real users or groups to `CMDB.Reader` or `CMDB.Admin`. Automating that would require additional Graph app-role-assignment permission and a concrete tenant principal ID. Those privileges and mappings are not guessed by the repository.
 
+## Quota-aware IaC policy
+
+Quota requirements are versioned in `infra/azure/quota-policy.json` and evaluated by `infra/azure/quota_guard.py` before expensive deployment steps.
+
+- `ManagedEnvironmentCount` is region scoped. If the target Container Apps environment does not already exist and the selected region has no free environment slot, the workflow can submit an Azure Quota Management request and poll until the new limit becomes usable.
+- `ManagedEnvironmentConsumptionCores` is environment scoped. Azure treats this quota as a manual-request class, so the workflow detects insufficient capacity immediately after the environment is created and stops before image build with exact `current`, `limit`, `available`, and `requiredAvailable` values.
+
+The current policy reserves 1.5 free consumption cores, matching three application replicas at 0.5 core each. Application CPU or scaling changes must update this policy in the same change set.
+
 ## Deployment workflow
 
-`.github/workflows/deploy-azure.yml` can run manually or from the dedicated `deploy/azure-production` trigger branch.
+`.github/workflows/deploy-azure.yml` can run manually or from the dedicated `deploy/azure-production` trigger branch. Normal pull requests validate application code, the OIDC bootstrap shell, quota decision logic, and Bicep without receiving production credentials.
 
 The production sequence is fail-closed:
 
-1. OIDC login to Azure.
-2. Create/update the resource group.
-3. Deploy VNet, private PostgreSQL, ACR, identities, Log Analytics, and Container Apps environment.
-4. Build and push the frozen-dependency backend image.
-5. Deploy the Container App with external ingress disabled and `CMDB_AUTH_MODE=entra`.
-6. Create the Entra application, App Roles, service principal, FIC, and Container Apps auth config.
-7. Verify EasyAuth is enabled and `appRoleAssignmentRequired=true`.
-8. Only then enable external ingress.
-9. Verify an active revision exists.
-10. Verify `/health` is reachable and an unauthenticated `/ui/` request is redirected to login.
-11. Persist a non-sensitive deployment result containing run ID, status, commit, resource group, location, and name prefix to the deployment branch for troubleshooting.
+1. Validate required GitHub production secrets.
+2. OIDC login to Azure.
+3. Register/verify Azure quota tooling.
+4. Create/update the resource group.
+5. Check regional Container Apps quota and request supported capacity increases when required.
+6. Deploy VNet, private PostgreSQL, ACR, identities, Log Analytics, and Container Apps environment.
+7. Check environment consumption-core quota before image build.
+8. Build and push the frozen-dependency backend image.
+9. Deploy the Container App with external ingress disabled and `CMDB_AUTH_MODE=entra`.
+10. Create the Entra application, App Roles, service principal, FIC, and Container Apps auth config.
+11. Verify EasyAuth is enabled and `appRoleAssignmentRequired=true`.
+12. Only then enable external ingress.
+13. Verify an active revision exists.
+14. Verify `/health` is reachable and an unauthenticated `/ui/` request is redirected to login.
+15. Persist a non-sensitive deployment result containing run ID, status, commit, resource group, location, and name prefix to the deployment branch for troubleshooting.
 
-A failure before step 8 leaves the CMDB non-public.
+A failure before external-ingress enablement leaves the CMDB non-public. The deployment-result step runs with `always()` on `deploy/azure-production`, so successful and failed attempts both leave an auditable run pointer.
 
 ## Assign first users
 
