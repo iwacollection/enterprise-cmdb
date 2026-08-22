@@ -11,6 +11,9 @@ class TeamRepository:
     def list(self) -> list[Team]:
         return list(self.session.scalars(select(Team)).all())
 
+    def get_by_id(self, team_id: str) -> Team | None:
+        return self.session.get(Team, team_id)
+
     def create(self, team: Team) -> Team:
         self.session.add(team)
         self.session.commit()
