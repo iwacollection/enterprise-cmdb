@@ -1,7 +1,7 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app.database.dependency import get_session
@@ -15,7 +15,6 @@ def test_cmdb_core_api_flow():
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine)
 
     def override_session():
         with Session(engine) as session:
@@ -117,8 +116,5 @@ def test_cmdb_core_api_flow():
     assert len(changes.json()) == 1
     assert changes.json()[0]["action"] == "create"
     assert changes.json()[0]["after"]["detail"]["engine"] == "mysql"
-
-    with session_factory() as session:
-        assert session.execute.__self__ is session
 
     app.dependency_overrides.clear()
