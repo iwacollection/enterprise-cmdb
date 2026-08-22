@@ -13,6 +13,12 @@ class ServiceService:
     def get_service(self, service_id: str) -> Service | None:
         return self.repository.get_by_id(service_id)
 
+    def team_exists(self, team_id: str) -> bool:
+        return self.repository.team_exists(team_id)
+
+    def is_referenced(self, service_id: str) -> bool:
+        return self.repository.is_referenced(service_id)
+
     def create_service(self, data: ServiceCreate, request_id: str, changed_by: str) -> Service:
         return self.repository.create(
             Service(
