@@ -18,6 +18,12 @@ class EnvironmentRepository:
     def get_by_id(self, environment_id: UUID) -> Environment | None:
         return self.session.get(Environment, environment_id)
 
+    def name_in_use(self, name: str, exclude_id: UUID | None = None) -> bool:
+        statement = select(Environment.id).where(Environment.name == name)
+        if exclude_id is not None:
+            statement = statement.where(Environment.id != exclude_id)
+        return self.session.scalar(statement.limit(1)) is not None
+
     def is_referenced(self, environment_id: UUID) -> bool:
         statement = select(Asset.id).where(Asset.environment_id == environment_id).limit(1)
         return self.session.scalar(statement) is not None
