@@ -1,9 +1,5 @@
-"""Enterprise CMDB application entrypoint.
-
-Runtime initialization only.
-Business modules are intentionally not implemented yet.
-"""
+from app.config.settings import settings
 
 
 if __name__ == "__main__":
-    print("enterprise-cmdb runtime skeleton")
+    print(f"{settings.app_name} runtime skeleton")
