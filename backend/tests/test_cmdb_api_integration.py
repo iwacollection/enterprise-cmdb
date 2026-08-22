@@ -23,6 +23,10 @@ def test_cmdb_core_api_flow():
     app.dependency_overrides[get_session] = override_session
     client = TestClient(app)
 
+    readiness = client.get("/ready")
+    assert readiness.status_code == 200
+    assert readiness.json() == {"status": "ready"}
+
     environment = client.post(
         "/environments",
         json={"name": "production", "description": "production environment"},
