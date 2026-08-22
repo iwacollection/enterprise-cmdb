@@ -13,18 +13,31 @@ class TeamService:
     def get_team(self, team_id: str) -> Team | None:
         return self.repository.get_by_id(team_id)
 
-    def create_team(self, data: TeamCreate) -> Team:
+    def create_team(self, data: TeamCreate, request_id: str, changed_by: str) -> Team:
         return self.repository.create(
             Team(
                 name=data.name,
                 description=data.description,
-            )
+            ),
+            request_id,
+            changed_by,
         )
 
-    def update_team(self, team: Team, data: TeamUpdate) -> Team:
+    def update_team(
+        self,
+        team: Team,
+        data: TeamUpdate,
+        request_id: str,
+        changed_by: str,
+    ) -> Team:
+        before = {
+            "id": team.id,
+            "name": team.name,
+            "description": team.description,
+        }
         team.name = data.name
         team.description = data.description
-        return self.repository.update(team)
+        return self.repository.update(team, before, request_id, changed_by)
 
-    def delete_team(self, team: Team) -> None:
-        self.repository.delete(team)
+    def delete_team(self, team: Team, request_id: str, changed_by: str) -> None:
+        self.repository.delete(team, request_id, changed_by)
