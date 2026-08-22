@@ -12,7 +12,10 @@ param containerImage string = ''
 @description('Create or update the Container App after its image has been pushed to ACR.')
 param deployContainerApp bool = false
 
-@description('Expose the Container App outside the Container Apps environment. Keep false until an authentication policy is configured.')
+@description('Enable Microsoft Entra EasyAuth and application RBAC.')
+param enableEntraAuth bool = false
+
+@description('Expose the Container App outside the Container Apps environment.')
 param externalIngressEnabled bool = false
 
 @description('PostgreSQL administrator login.')
@@ -168,6 +171,11 @@ resource containerPullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities
   location: location
 }
 
+resource containerAuthIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${namePrefix}-auth-identity'
+  location: location
+}
+
 resource acrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(acr.id, containerPullIdentity.id, 'acrpull')
   scope: acr
@@ -243,14 +251,42 @@ var databaseEnvironment = [
   }
 ]
 
+var runtimeEnvironment = concat(databaseEnvironment, [
+  {
+    name: 'CMDB_AUTH_MODE'
+    value: enableEntraAuth ? 'entra' : 'local'
+  }
+])
+
+var pullIdentityMap = {
+  '${containerPullIdentity.id}': {}
+}
+var authIdentityMap = {
+  '${containerAuthIdentity.id}': {}
+}
+var containerIdentityMap = enableEntraAuth ? union(pullIdentityMap, authIdentityMap) : pullIdentityMap
+
+var containerSecrets = concat(
+  [
+    {
+      name: 'postgres-password'
+      value: postgresAdministratorPassword
+    }
+  ],
+  enableEntraAuth ? [
+    {
+      name: 'override-use-mi-fic-assertion-client-id'
+      value: containerAuthIdentity.properties.clientId
+    }
+  ] : []
+)
+
 resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployContainerApp) {
   name: appResourceName
   location: location
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${containerPullIdentity.id}': {}
-    }
+    userAssignedIdentities: containerIdentityMap
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
@@ -274,12 +310,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
           identity: containerPullIdentity.id
         }
       ]
-      secrets: [
-        {
-          name: 'postgres-password'
-          value: postgresAdministratorPassword
-        }
-      ]
+      secrets: containerSecrets
     }
     template: {
       initContainers: [
@@ -304,7 +335,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
         {
           name: 'cmdb'
           image: containerImage
-          env: databaseEnvironment
+          env: runtimeEnvironment
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -343,6 +374,51 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
     acrPullAssignment
     postgresDatabase
   ]
+}
+
+module entraRegistration 'entra.bicep' = if (deployContainerApp && enableEntraAuth) {
+  name: 'entra-registration'
+  params: {
+    namePrefix: namePrefix
+    webEndpoint: 'https://${containerApp.properties.configuration.ingress.fqdn}'
+    authIdentityPrincipalId: containerAuthIdentity.properties.principalId
+  }
+}
+
+resource containerAppAuth 'Microsoft.App/containerApps/authConfigs@2026-01-01' = if (deployContainerApp && enableEntraAuth) {
+  parent: containerApp
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+    }
+    globalValidation: {
+      excludedPaths: [
+        '/health'
+        '/ready'
+      ]
+      redirectToProvider: 'azureactivedirectory'
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+    }
+    httpSettings: {
+      requireHttps: true
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: entraRegistration.outputs.clientAppId
+          clientSecretSettingName: 'override-use-mi-fic-assertion-client-id'
+          openIdIssuer: entraRegistration.outputs.openIdIssuer
+        }
+        validation: {
+          defaultAuthorizationPolicy: {
+            allowedApplications: []
+          }
+        }
+      }
+    }
+  }
 }
 
 output acrName string = acr.name
