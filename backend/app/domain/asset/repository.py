@@ -17,6 +17,9 @@ from app.domain.asset.model import (
 )
 from app.domain.asset.schema import AssetWrite
 from app.domain.audit.model import ChangeRecord
+from app.domain.environment.model import Environment
+from app.domain.service.model import Service
+from app.domain.team.model import Team
 
 
 DETAIL_MODELS = {
@@ -33,6 +36,22 @@ ALL_DETAIL_MODELS = tuple(set(DETAIL_MODELS.values()))
 class AssetRepository:
     def __init__(self, session: Session):
         self.session = session
+
+    def reference_error(self, data: AssetWrite) -> str | None:
+        if self.session.get(Environment, data.environment_id) is None:
+            return "Environment not found"
+        if self.session.get(Team, data.team_id) is None:
+            return "Team not found"
+        if data.service_ids:
+            existing = set(
+                self.session.scalars(
+                    select(Service.id).where(Service.id.in_(data.service_ids))
+                ).all()
+            )
+            missing = [service_id for service_id in data.service_ids if service_id not in existing]
+            if missing:
+                return f"Service not found: {missing[0]}"
+        return None
 
     def list(
         self,
