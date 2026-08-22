@@ -1,8 +1,9 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.asset.repository import AssetRepository
 from app.domain.asset.schema import (
@@ -20,13 +21,6 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 
 def get_asset_service(session: Session) -> AssetService:
     return AssetService(AssetRepository(session))
-
-
-def request_context(
-    actor: str = Header(alias="X-CMDB-Actor"),
-    request_id: str | None = Header(default=None, alias="X-Request-ID"),
-) -> tuple[str, str]:
-    return actor, request_id or str(uuid4())
 
 
 @router.get("", response_model=list[AssetResponse])
