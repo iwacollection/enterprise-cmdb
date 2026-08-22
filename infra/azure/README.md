@@ -79,13 +79,14 @@ The script is intentionally fail-fast. It does the following against the current
 1. creates or reuses the dedicated `github-enterprise-cmdb-deployer` Entra application and service principal,
 2. creates the GitHub environment federated credential with subject `repo:iwacollection/enterprise-cmdb:environment:production`,
 3. creates `rg-enterprise-cmdb` in `eastasia` if needed,
-4. grants the deployment service principal `Contributor`, `Role Based Access Control Administrator`, and `AcrPush` at that resource-group scope,
-5. requests Microsoft Graph `Application.ReadWrite.OwnedBy` and performs admin consent,
-6. generates a strong PostgreSQL administrator password without printing it,
-7. writes the four required values to GitHub `production` environment secrets with `gh secret set`,
-8. triggers `deploy-azure.yml` on `deploy/azure-production`.
+4. grants the deployment service principal `Contributor`, `Role Based Access Control Administrator`, and `AcrPush` at resource-group scope,
+5. grants `Quota Request Operator` at subscription scope so the deployment identity can read quota, register the Quota provider, and create supported quota requests without receiving broad subscription Contributor access,
+6. requests Microsoft Graph `Application.ReadWrite.OwnedBy` and performs admin consent,
+7. generates a strong PostgreSQL administrator password without printing it,
+8. writes the four required values to GitHub `production` environment secrets with `gh secret set`,
+9. triggers `deploy-azure.yml` on `deploy/azure-production`.
 
-This bootstrap requires the signed-in Azure user to be allowed to create Entra applications, assign Azure roles at the target resource-group scope, and grant tenant admin consent for the Graph application permission. If any of those account-level permissions are missing, the script stops at that exact boundary instead of weakening the deployment identity.
+This bootstrap requires the signed-in Azure user to be allowed to create Entra applications, assign the resource-group deployment roles, assign `Quota Request Operator` at subscription scope, and grant tenant admin consent for the Graph application permission. If any of those account-level permissions are missing, the script stops at that exact boundary instead of weakening the deployment identity.
 
 ## Required GitHub production secrets
 
@@ -106,9 +107,10 @@ The GitHub OIDC deployment identity needs Azure RBAC permission to:
 2. create the `AcrPull` role assignment for the Container App pull identity,
 3. push the built `enterprise-cmdb` image to ACR,
 4. read Azure Container Apps quota usage,
-5. submit supported quota increase requests.
+5. register/use the Microsoft.Quota resource provider,
+6. submit supported quota increase requests.
 
-The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; `Role Based Access Control Administrator` supplies that action without the broader authorization surface of `User Access Administrator`. Image push requires `AcrPush` on this RBAC-only registry. Automatic quota requests require `Microsoft.Quota/quotas/write`; use `Quota Request Operator` when a separate least-privilege quota assignment is appropriate.
+The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; `Role Based Access Control Administrator` supplies that action at the resource-group scope without the broader authorization surface of `User Access Administrator`. Image push requires `AcrPush` on this RBAC-only registry. Quota operations use the built-in subscription-scoped `Quota Request Operator`, which includes `Microsoft.Quota/usages/read`, `Microsoft.Quota/quotas/write`, and `Microsoft.Quota/register/action`.
 
 The same deployment identity also needs Microsoft Graph application permission to create/update the Entra application and service principal through the Microsoft Graph Bicep extension. The bootstrap requests the least-privilege `Application.ReadWrite.OwnedBy` permission with tenant admin consent rather than `Application.ReadWrite.All`.
 
