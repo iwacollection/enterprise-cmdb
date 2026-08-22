@@ -6,6 +6,7 @@ Database URL is provided by runtime configuration.
 from alembic import context
 
 from app.database.base import Base
+from app.domain.environment import model as environment_model
 
 config = context.config
 target_metadata = Base.metadata
