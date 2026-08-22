@@ -20,7 +20,7 @@ AssetStatus = Literal["active", "inactive"]
 
 class ComputeDetailInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    cpu_cores: Decimal | None = None
+    cpu_cores: Decimal | None = Field(default=None, ge=0)
     memory_mb: int | None = Field(default=None, ge=0)
     disk_gb: int | None = Field(default=None, ge=0)
 
@@ -58,6 +58,7 @@ DETAIL_MODELS = {
 
 
 class AssetIPInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     address: str
     role: str | None = None
     is_primary: bool = False
@@ -70,6 +71,7 @@ class AssetIPInput(BaseModel):
 
 
 class AssetEndpointInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     endpoint: str
     port: int = Field(ge=1, le=65535)
     protocol: str | None = None
@@ -78,6 +80,8 @@ class AssetEndpointInput(BaseModel):
 
 
 class AssetWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     asset_type: AssetType
     status: AssetStatus = "active"
@@ -90,14 +94,21 @@ class AssetWrite(BaseModel):
     detail: dict | None = None
 
     @model_validator(mode="after")
-    def validate_detail(self):
+    def validate_aggregate(self):
         detail_model = DETAIL_MODELS.get(self.asset_type)
         if detail_model is None:
             if self.detail is not None:
                 raise ValueError(f"{self.asset_type} does not accept detail fields")
-            return self
-        if self.detail is not None:
+        elif self.detail is not None:
             detail_model.model_validate(self.detail)
+
+        if len(self.service_ids) != len(set(self.service_ids)):
+            raise ValueError("service_ids must not contain duplicates")
+        if len(self.ips) != len({item.address for item in self.ips}):
+            raise ValueError("ips must not contain duplicate addresses")
+        endpoint_keys = {(item.endpoint, item.port) for item in self.endpoints}
+        if len(self.endpoints) != len(endpoint_keys):
+            raise ValueError("endpoints must not contain duplicate endpoint/port pairs")
         return self
 
 
