@@ -9,6 +9,11 @@ class EnvironmentCreate(BaseModel):
     description: str | None = None
 
 
+class EnvironmentUpdate(BaseModel):
+    name: str
+    description: str | None = None
+
+
 class EnvironmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
