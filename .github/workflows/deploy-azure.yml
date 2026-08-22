@@ -81,6 +81,7 @@ jobs:
 
       - name: Ensure Azure quota tooling
         run: |
+          az provider register --namespace Microsoft.App --wait
           az provider register --namespace Microsoft.Quota --wait
           az extension add --name quota --upgrade --only-show-errors
 
