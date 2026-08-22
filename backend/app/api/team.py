@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.team.repository import TeamRepository
 from app.domain.team.schema import TeamCreate, TeamResponse, TeamUpdate
@@ -28,28 +29,40 @@ def get_team(team_id: str, session: Session = Depends(get_session)):
 
 
 @router.post("", response_model=TeamResponse, status_code=201)
-def create_team(payload: TeamCreate, session: Session = Depends(get_session)):
-    return get_service(session).create_team(payload)
+def create_team(
+    payload: TeamCreate,
+    context: tuple[str, str] = Depends(request_context),
+    session: Session = Depends(get_session),
+):
+    actor, request_id = context
+    return get_service(session).create_team(payload, request_id, actor)
 
 
 @router.put("/{team_id}", response_model=TeamResponse)
 def update_team(
     team_id: str,
     payload: TeamUpdate,
+    context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
     service = get_service(session)
     team = service.get_team(team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
-    return service.update_team(team, payload)
+    actor, request_id = context
+    return service.update_team(team, payload, request_id, actor)
 
 
 @router.delete("/{team_id}", status_code=204)
-def delete_team(team_id: str, session: Session = Depends(get_session)):
+def delete_team(
+    team_id: str,
+    context: tuple[str, str] = Depends(request_context),
+    session: Session = Depends(get_session),
+):
     service = get_service(session)
     team = service.get_team(team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
-    service.delete_team(team)
+    actor, request_id = context
+    service.delete_team(team, request_id, actor)
     return Response(status_code=204)
