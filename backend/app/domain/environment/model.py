@@ -15,5 +15,7 @@ class Environment(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text())
-    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
