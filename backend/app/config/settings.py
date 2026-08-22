@@ -24,10 +24,18 @@ def _database_url() -> str:
     )
 
 
+def _auth_mode() -> str:
+    value = os.environ.get("CMDB_AUTH_MODE", "local")
+    if value not in {"local", "entra"}:
+        raise ValueError("CMDB_AUTH_MODE must be 'local' or 'entra'")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "enterprise-cmdb"
     database_url: str = _database_url()
+    auth_mode: str = _auth_mode()
 
 
 settings = Settings()
