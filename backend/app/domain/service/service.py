@@ -13,6 +13,9 @@ class ServiceService:
     def get_service(self, service_id: str) -> Service | None:
         return self.repository.get_by_id(service_id)
 
+    def name_in_use(self, name: str, exclude_id: str | None = None) -> bool:
+        return self.repository.name_in_use(name, exclude_id)
+
     def team_exists(self, team_id: str) -> bool:
         return self.repository.team_exists(team_id)
 
@@ -21,11 +24,7 @@ class ServiceService:
 
     def create_service(self, data: ServiceCreate, request_id: str, changed_by: str) -> Service:
         return self.repository.create(
-            Service(
-                name=data.name,
-                team_id=data.team_id,
-                description=data.description,
-            ),
+            Service(name=data.name, team_id=data.team_id, description=data.description),
             request_id,
             changed_by,
         )
