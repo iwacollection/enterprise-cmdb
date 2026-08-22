@@ -18,11 +18,11 @@ on:
         required: true
         default: cmdb
         type: string
-      external_ingress:
-        description: Expose the CMDB app outside the Container Apps environment
-        required: true
-        default: false
-        type: boolean
+  push:
+    branches:
+      - deploy/azure-production
+    paths:
+      - .github/deploy-production
 
 permissions:
   contents: read
@@ -37,9 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      RESOURCE_GROUP: ${{ inputs.resource_group }}
-      LOCATION: ${{ inputs.location }}
-      NAME_PREFIX: ${{ inputs.name_prefix }}
+      RESOURCE_GROUP: ${{ inputs.resource_group || 'rg-enterprise-cmdb' }}
+      LOCATION: ${{ inputs.location || 'eastasia' }}
+      NAME_PREFIX: ${{ inputs.name_prefix || 'cmdb' }}
       POSTGRES_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
 
     steps:
@@ -95,10 +95,9 @@ jobs:
           docker push "$image"
           echo "uri=$image" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy CMDB application
+      - name: Deploy private CMDB with Entra auth
         env:
           CONTAINER_IMAGE: ${{ steps.image.outputs.uri }}
-          EXTERNAL_INGRESS: ${{ inputs.external_ingress }}
         run: |
           az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
@@ -107,12 +106,52 @@ jobs:
               namePrefix="$NAME_PREFIX" \
               location="$LOCATION" \
               deployContainerApp=true \
-              externalIngressEnabled="$EXTERNAL_INGRESS" \
+              enableEntraAuth=true \
+              externalIngressEnabled=false \
               containerImage="$CONTAINER_IMAGE" \
               postgresAdministratorPassword="$POSTGRES_PASSWORD" \
             --output none
 
-      - name: Verify Container App revision
+      - name: Verify Entra auth configuration
+        id: auth
+        run: |
+          app_name="${NAME_PREFIX}-app"
+          auth_json=$(az containerapp auth show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$app_name" \
+            --output json)
+
+          test "$(echo "$auth_json" | jq -r '.platform.enabled')" = "true"
+          test "$(echo "$auth_json" | jq -r '.identityProviders.azureActiveDirectory.enabled')" = "true"
+
+          client_id=$(echo "$auth_json" | jq -r '.identityProviders.azureActiveDirectory.registration.clientId')
+          test -n "$client_id"
+          test "$client_id" != "null"
+
+          assignment_required=$(az ad sp show --id "$client_id" --query appRoleAssignmentRequired --output tsv)
+          test "$assignment_required" = "true"
+          echo "client_id=$client_id" >> "$GITHUB_OUTPUT"
+
+      - name: Enable authenticated external ingress
+        env:
+          CONTAINER_IMAGE: ${{ steps.image.outputs.uri }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/azure/main.bicep \
+            --parameters \
+              namePrefix="$NAME_PREFIX" \
+              location="$LOCATION" \
+              deployContainerApp=true \
+              enableEntraAuth=true \
+              externalIngressEnabled=true \
+              containerImage="$CONTAINER_IMAGE" \
+              postgresAdministratorPassword="$POSTGRES_PASSWORD" \
+            --output none
+
+      - name: Verify active revision and protected endpoint
+        env:
+          ENTRA_CLIENT_ID: ${{ steps.auth.outputs.client_id }}
         run: |
           app_name="${NAME_PREFIX}-app"
           revision=$(az containerapp revision list \
@@ -121,22 +160,19 @@ jobs:
             --query "[?properties.active].name | [0]" \
             --output tsv)
           test -n "$revision"
-          echo "Active revision: $revision"
 
-      - name: Print private deployment result
-        if: ${{ !inputs.external_ingress }}
-        run: |
-          echo "CMDB deployed with external ingress disabled."
-          echo "Enable public ingress only after the production authentication policy is configured."
-
-      - name: Smoke test external endpoint
-        if: ${{ inputs.external_ingress }}
-        run: |
           fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" \
-            --name "${NAME_PREFIX}-app" \
+            --name "$app_name" \
             --query properties.configuration.ingress.fqdn \
             --output tsv)
           test -n "$fqdn"
+
           curl --fail --silent --show-error --retry 10 --retry-delay 5 "https://${fqdn}/health"
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' "https://${fqdn}/ui/")
+          test "$status" = "302"
+
+          echo "Active revision: $revision"
           echo "CMDB URL: https://${fqdn}/ui/"
+          echo "Entra application client ID: $ENTRA_CLIENT_ID"
+          echo "Assign CMDB.Reader or CMDB.Admin before interactive sign-in."
