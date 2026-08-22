@@ -18,6 +18,11 @@ on:
         required: true
         default: cmdb
         type: string
+      auto_request_quota:
+        description: Automatically request supported Azure quota increases when capacity is exhausted
+        required: true
+        default: true
+        type: boolean
   push:
     branches:
       - deploy/azure-production
@@ -40,21 +45,40 @@ jobs:
       RESOURCE_GROUP: ${{ inputs.resource_group || 'rg-enterprise-cmdb' }}
       LOCATION: ${{ inputs.location || 'eastasia' }}
       NAME_PREFIX: ${{ inputs.name_prefix || 'cmdb' }}
+      AUTO_REQUEST_QUOTA: ${{ inputs.auto_request_quota || 'true' }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       POSTGRES_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Azure deployment credentials
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$AZURE_CLIENT_ID" ]] || missing+=(AZURE_CLIENT_ID)
+          [[ -n "$AZURE_TENANT_ID" ]] || missing+=(AZURE_TENANT_ID)
+          [[ -n "$AZURE_SUBSCRIPTION_ID" ]] || missing+=(AZURE_SUBSCRIPTION_ID)
+          [[ -n "$POSTGRES_PASSWORD" ]] || missing+=(AZURE_POSTGRES_ADMIN_PASSWORD)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing GitHub production secrets: ${missing[*]}. Configure them in the repository production environment before Azure deployment can run."
+            exit 1
+          fi
+
       - name: Azure login with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate required secret
-        run: test -n "$POSTGRES_PASSWORD"
+      - name: Ensure Azure quota tooling
+        run: |
+          az provider register --namespace Microsoft.Quota --wait
+          az extension add --name quota --upgrade --only-show-errors
 
       - name: Ensure resource group
         run: |
@@ -62,6 +86,79 @@ jobs:
             --name "$RESOURCE_GROUP" \
             --location "$LOCATION" \
             --output none
+
+      - name: Preflight regional Container Apps quota
+        run: |
+          set -euo pipefail
+
+          policy_file="infra/azure/quota-policy.json"
+          subscription_id=$(az account show --query id --output tsv)
+          quota_scope="/subscriptions/${subscription_id}/providers/Microsoft.App/locations/${LOCATION}"
+          usage_uri="https://management.azure.com${quota_scope}/usages?api-version=2026-01-01"
+          environment_name="${NAME_PREFIX}-env"
+
+          environment_exists=false
+          if az containerapp env show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$environment_name" \
+            --output none >/dev/null 2>&1; then
+            environment_exists=true
+          fi
+
+          az rest --method get --url "$usage_uri" --output json > regional-usage.json
+
+          minimum_limit=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.minimumLimit' "$policy_file")
+          request_increment=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.requestIncrement' "$policy_file")
+          poll_attempts=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.pollAttempts' "$policy_file")
+          poll_seconds=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.pollSeconds' "$policy_file")
+
+          decision=$(python3 infra/azure/quota_guard.py regional \
+            --usage-file regional-usage.json \
+            --environment-exists "$environment_exists" \
+            --minimum-limit "$minimum_limit" \
+            --request-increment "$request_increment")
+          echo "Regional quota decision: $decision"
+
+          action=$(jq -r '.action' <<<"$decision")
+          if [[ "$action" == "ok" ]]; then
+            exit 0
+          fi
+
+          if [[ "$AUTO_REQUEST_QUOTA" != "true" ]]; then
+            echo "::error::Azure Container Apps ManagedEnvironmentCount quota is exhausted in ${LOCATION}, and automatic quota requests are disabled."
+            exit 1
+          fi
+
+          requested_limit=$(jq -r '.requestedLimit' <<<"$decision")
+          echo "Requesting ManagedEnvironmentCount quota limit ${requested_limit} in ${LOCATION}."
+
+          if ! az quota update \
+            --resource-name ManagedEnvironmentCount \
+            --scope "$quota_scope" \
+            --limit-object "value=${requested_limit}" \
+            --no-wait false \
+            --output json > quota-request.json; then
+            echo "::error::Automatic quota request failed. The Azure deployment identity needs Microsoft.Quota/quotas/write, normally via the Quota Request Operator role at subscription scope."
+            exit 1
+          fi
+
+          for ((attempt=1; attempt<=poll_attempts; attempt++)); do
+            az rest --method get --url "$usage_uri" --output json > regional-usage.json
+            decision=$(python3 infra/azure/quota_guard.py regional \
+              --usage-file regional-usage.json \
+              --environment-exists "$environment_exists" \
+              --minimum-limit "$minimum_limit" \
+              --request-increment "$request_increment")
+            action=$(jq -r '.action' <<<"$decision")
+            echo "Quota poll ${attempt}/${poll_attempts}: $decision"
+            if [[ "$action" == "ok" ]]; then
+              exit 0
+            fi
+            sleep "$poll_seconds"
+          done
+
+          echo "::error::Quota request was submitted but the new ManagedEnvironmentCount limit did not become usable before the deployment timeout. Re-run this workflow after Azure approves the request."
+          exit 1
 
       - name: Deploy Azure foundation
         id: foundation
@@ -81,6 +178,32 @@ jobs:
           acr_server=$(echo "$outputs" | jq -r '.acrLoginServer.value')
           echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
           echo "acr_server=$acr_server" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight Container Apps environment core quota
+        run: |
+          set -euo pipefail
+
+          policy_file="infra/azure/quota-policy.json"
+          environment_name="${NAME_PREFIX}-env"
+          required_available=$(jq -r '.containerApps.environment.ManagedEnvironmentConsumptionCores.requiredAvailable' "$policy_file")
+
+          az containerapp env list-usages \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$environment_name" \
+            --output json > environment-usage.json
+
+          decision=$(python3 infra/azure/quota_guard.py environment \
+            --usage-file environment-usage.json \
+            --required-available "$required_available")
+          echo "Environment quota decision: $decision"
+
+          if [[ "$(jq -r '.action' <<<"$decision")" != "ok" ]]; then
+            current=$(jq -r '.current' <<<"$decision")
+            limit=$(jq -r '.limit' <<<"$decision")
+            available=$(jq -r '.available' <<<"$decision")
+            echo "::error::Managed Environment Consumption Cores requires a manual Azure Container Apps quota request. current=${current}, limit=${limit}, available=${available}, requiredAvailable=${required_available}. Azure documents this environment-scoped quota as a manual request, so the pipeline cannot self-approve it."
+            exit 1
+          fi
 
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ steps.foundation.outputs.acr_name }}"
