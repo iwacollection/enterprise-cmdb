@@ -23,6 +23,21 @@ on:
         required: true
         default: false
         type: boolean
+      auto_request_quota:
+        description: Automatically request supported Azure quota increases when capacity is exhausted
+        required: true
+        default: true
+        type: boolean
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - infra/azure/**
+      - .github/workflows/deploy-azure.yml
 
 permissions:
   contents: read
@@ -34,17 +49,29 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'deploy/') }}
     runs-on: ubuntu-latest
     environment: production
     env:
-      RESOURCE_GROUP: ${{ inputs.resource_group }}
-      LOCATION: ${{ inputs.location }}
-      NAME_PREFIX: ${{ inputs.name_prefix }}
+      RESOURCE_GROUP: rg-enterprise-cmdb
+      LOCATION: eastasia
+      NAME_PREFIX: cmdb
+      EXTERNAL_INGRESS: "false"
+      AUTO_REQUEST_QUOTA: "true"
       POSTGRES_PASSWORD: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve deployment inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "RESOURCE_GROUP=${{ inputs.resource_group }}" >> "$GITHUB_ENV"
+          echo "LOCATION=${{ inputs.location }}" >> "$GITHUB_ENV"
+          echo "NAME_PREFIX=${{ inputs.name_prefix }}" >> "$GITHUB_ENV"
+          echo "EXTERNAL_INGRESS=${{ inputs.external_ingress }}" >> "$GITHUB_ENV"
+          echo "AUTO_REQUEST_QUOTA=${{ inputs.auto_request_quota }}" >> "$GITHUB_ENV"
 
       - name: Azure login with OIDC
         uses: azure/login@v2
@@ -56,12 +83,90 @@ jobs:
       - name: Validate required secret
         run: test -n "$POSTGRES_PASSWORD"
 
+      - name: Ensure Azure quota tooling
+        run: |
+          az provider register --namespace Microsoft.Quota --wait
+          az extension add --name quota --upgrade --only-show-errors
+
       - name: Ensure resource group
         run: |
           az group create \
             --name "$RESOURCE_GROUP" \
             --location "$LOCATION" \
             --output none
+
+      - name: Preflight regional Container Apps quota
+        run: |
+          set -euo pipefail
+
+          policy_file="infra/azure/quota-policy.json"
+          subscription_id=$(az account show --query id --output tsv)
+          quota_scope="/subscriptions/${subscription_id}/providers/Microsoft.App/locations/${LOCATION}"
+          usage_uri="https://management.azure.com${quota_scope}/usages?api-version=2026-01-01"
+          environment_name="${NAME_PREFIX}-env"
+
+          environment_exists=false
+          if az containerapp env show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$environment_name" \
+            --output none >/dev/null 2>&1; then
+            environment_exists=true
+          fi
+
+          az rest --method get --url "$usage_uri" --output json > regional-usage.json
+
+          minimum_limit=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.minimumLimit' "$policy_file")
+          request_increment=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.requestIncrement' "$policy_file")
+          poll_attempts=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.pollAttempts' "$policy_file")
+          poll_seconds=$(jq -r '.containerApps.regional.ManagedEnvironmentCount.pollSeconds' "$policy_file")
+
+          decision=$(python3 infra/azure/quota_guard.py regional \
+            --usage-file regional-usage.json \
+            --environment-exists "$environment_exists" \
+            --minimum-limit "$minimum_limit" \
+            --request-increment "$request_increment")
+          echo "Regional quota decision: $decision"
+
+          action=$(jq -r '.action' <<<"$decision")
+          if [[ "$action" == "ok" ]]; then
+            exit 0
+          fi
+
+          if [[ "$AUTO_REQUEST_QUOTA" != "true" ]]; then
+            echo "::error::Azure Container Apps ManagedEnvironmentCount quota is exhausted in ${LOCATION}, and automatic quota requests are disabled."
+            exit 1
+          fi
+
+          requested_limit=$(jq -r '.requestedLimit' <<<"$decision")
+          echo "Requesting ManagedEnvironmentCount quota limit ${requested_limit} in ${LOCATION}."
+
+          if ! az quota update \
+            --resource-name ManagedEnvironmentCount \
+            --scope "$quota_scope" \
+            --limit-object "value=${requested_limit}" \
+            --no-wait false \
+            --output json > quota-request.json; then
+            echo "::error::Automatic quota request failed. The Azure deployment identity needs Microsoft.Quota/quotas/write, normally via the Quota Request Operator role at subscription scope."
+            exit 1
+          fi
+
+          for ((attempt=1; attempt<=poll_attempts; attempt++)); do
+            az rest --method get --url "$usage_uri" --output json > regional-usage.json
+            decision=$(python3 infra/azure/quota_guard.py regional \
+              --usage-file regional-usage.json \
+              --environment-exists "$environment_exists" \
+              --minimum-limit "$minimum_limit" \
+              --request-increment "$request_increment")
+            action=$(jq -r '.action' <<<"$decision")
+            echo "Quota poll ${attempt}/${poll_attempts}: $decision"
+            if [[ "$action" == "ok" ]]; then
+              exit 0
+            fi
+            sleep "$poll_seconds"
+          done
+
+          echo "::error::Quota request was submitted but the new ManagedEnvironmentCount limit did not become usable before the deployment timeout. Re-run this workflow after Azure approves the request."
+          exit 1
 
       - name: Deploy Azure foundation
         id: foundation
@@ -82,6 +187,32 @@ jobs:
           echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
           echo "acr_server=$acr_server" >> "$GITHUB_OUTPUT"
 
+      - name: Preflight Container Apps environment core quota
+        run: |
+          set -euo pipefail
+
+          policy_file="infra/azure/quota-policy.json"
+          environment_name="${NAME_PREFIX}-env"
+          required_available=$(jq -r '.containerApps.environment.ManagedEnvironmentConsumptionCores.requiredAvailable' "$policy_file")
+
+          az containerapp env list-usages \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$environment_name" \
+            --output json > environment-usage.json
+
+          decision=$(python3 infra/azure/quota_guard.py environment \
+            --usage-file environment-usage.json \
+            --required-available "$required_available")
+          echo "Environment quota decision: $decision"
+
+          if [[ "$(jq -r '.action' <<<"$decision")" != "ok" ]]; then
+            current=$(jq -r '.current' <<<"$decision")
+            limit=$(jq -r '.limit' <<<"$decision")
+            available=$(jq -r '.available' <<<"$decision")
+            echo "::error::Managed Environment Consumption Cores requires a manual Azure Container Apps quota request. current=${current}, limit=${limit}, available=${available}, requiredAvailable=${required_available}. Azure documents this environment-scoped quota as a manual request, so the pipeline cannot self-approve it."
+            exit 1
+          fi
+
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ steps.foundation.outputs.acr_name }}"
 
@@ -98,7 +229,6 @@ jobs:
       - name: Deploy CMDB application
         env:
           CONTAINER_IMAGE: ${{ steps.image.outputs.uri }}
-          EXTERNAL_INGRESS: ${{ inputs.external_ingress }}
         run: |
           az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
@@ -124,13 +254,13 @@ jobs:
           echo "Active revision: $revision"
 
       - name: Print private deployment result
-        if: ${{ !inputs.external_ingress }}
+        if: ${{ env.EXTERNAL_INGRESS != 'true' }}
         run: |
           echo "CMDB deployed with external ingress disabled."
           echo "Enable public ingress only after the production authentication policy is configured."
 
       - name: Smoke test external endpoint
-        if: ${{ inputs.external_ingress }}
+        if: ${{ env.EXTERNAL_INGRESS == 'true' }}
         run: |
           fqdn=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" \
