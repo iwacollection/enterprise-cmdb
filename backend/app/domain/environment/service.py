@@ -15,16 +15,16 @@ class EnvironmentService:
     def get_environment(self, environment_id: UUID) -> Environment | None:
         return self.repository.get_by_id(environment_id)
 
+    def is_referenced(self, environment_id: UUID) -> bool:
+        return self.repository.is_referenced(environment_id)
+
     def create_environment(
         self,
         data: EnvironmentCreate,
         request_id: str,
         changed_by: str,
     ) -> Environment:
-        environment = Environment(
-            name=data.name,
-            description=data.description,
-        )
+        environment = Environment(name=data.name, description=data.description)
         return self.repository.create(environment, request_id, changed_by)
 
     def update_environment(
@@ -42,3 +42,11 @@ class EnvironmentService:
         environment.name = data.name
         environment.description = data.description
         return self.repository.update(environment, before, request_id, changed_by)
+
+    def delete_environment(
+        self,
+        environment: Environment,
+        request_id: str,
+        changed_by: str,
+    ) -> None:
+        self.repository.delete(environment, request_id, changed_by)
