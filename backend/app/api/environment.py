@@ -35,8 +35,11 @@ def create_environment(
     context: tuple[str, str] = Depends(request_context),
     session: Session = Depends(get_session),
 ):
+    service = get_service(session)
+    if service.name_in_use(data.name):
+        raise HTTPException(status_code=409, detail="Environment name already exists")
     actor, request_id = context
-    return get_service(session).create_environment(data, request_id, actor)
+    return service.create_environment(data, request_id, actor)
 
 
 @router.put("/{environment_id}", response_model=EnvironmentResponse)
@@ -50,6 +53,8 @@ def update_environment(
     environment = service.get_environment(environment_id)
     if environment is None:
         raise HTTPException(status_code=404, detail="Environment not found")
+    if service.name_in_use(data.name, environment_id):
+        raise HTTPException(status_code=409, detail="Environment name already exists")
     actor, request_id = context
     return service.update_environment(environment, data, request_id, actor)
 
