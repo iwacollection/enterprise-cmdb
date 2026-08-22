@@ -38,6 +38,7 @@ param maxReplicas int = 3
 var suffix = uniqueString(resourceGroup().id)
 var acrName = toLower('${namePrefix}${suffix}')
 var postgresServerName = toLower('${namePrefix}-pg-${suffix}')
+var containerAppName = '${namePrefix}-app'
 var databaseName = 'cmdb'
 var privateDnsZoneName = 'privatelink.postgres.database.azure.com'
 var acrPullRoleDefinitionId = subscriptionResourceId(
@@ -242,7 +243,7 @@ var databaseEnvironment = [
 ]
 
 resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployContainerApp) {
-  name: '${namePrefix}-app'
+  name: containerAppName
   location: location
   identity: {
     type: 'UserAssigned'
@@ -318,6 +319,16 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
               initialDelaySeconds: 10
               periodSeconds: 30
             }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/ready'
+                port: 8000
+                scheme: 'HTTP'
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+            }
           ]
         }
       ]
@@ -336,4 +347,4 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output postgresHost string = postgresServer.properties.fullyQualifiedDomainName
-output containerAppName string = deployContainerApp ? containerApp.name : '${namePrefix}-app'
+output containerAppName string = containerAppName
