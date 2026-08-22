@@ -13,4 +13,4 @@ The CI gate must pass:
 
 A failed gate is treated as a development defect and must be fixed before deployment work proceeds.
 
-Validation iteration 5 verifies the OpenAPI route contract tests and complete delivery gates against the latest main branch.
+Validation iteration 6 verifies Alembic CLI imports, asset reference validation, normalized detail values, and the complete delivery gates against the latest main branch.
