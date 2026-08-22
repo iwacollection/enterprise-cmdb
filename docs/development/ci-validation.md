@@ -11,4 +11,4 @@ The CI gate must pass:
 
 A failed gate is treated as a development defect and must be fixed before deployment work proceeds.
 
-Validation iteration 2 verifies the adjusted FastAPI-aware Ruff policy and the expanded CMDB core on the latest main branch.
+Validation iteration 3 verifies the FastAPI route test fixes against the latest main branch.
