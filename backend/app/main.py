@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.asset import router as asset_router
 from app.api.audit import router as audit_router
@@ -18,6 +22,12 @@ app.include_router(service_router)
 app.include_router(asset_router)
 app.include_router(relation_router)
 app.include_router(audit_router)
+app.mount("/ui", StaticFiles(directory=Path(__file__).with_name("web"), html=True), name="ui")
+
+
+@app.get("/", include_in_schema=False)
+def web_console():
+    return RedirectResponse(url="/ui/")
 
 
 if __name__ == "__main__":
