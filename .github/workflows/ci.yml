@@ -52,6 +52,16 @@ jobs:
       - name: Validate compose runtime
         run: docker compose config -q
 
+      - name: Smoke test PostgreSQL runtime
+        run: |
+          cleanup() {
+            docker compose down --volumes --remove-orphans
+          }
+          trap cleanup EXIT
+          docker compose up --build --detach --wait
+          curl --fail --silent --show-error http://127.0.0.1:8000/health
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready
+
       - name: Build container
         run: docker build -t enterprise-cmdb:test .
 
