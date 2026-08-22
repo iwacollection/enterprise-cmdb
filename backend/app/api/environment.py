@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.api.context import request_context
@@ -52,3 +52,20 @@ def update_environment(
         raise HTTPException(status_code=404, detail="Environment not found")
     actor, request_id = context
     return service.update_environment(environment, data, request_id, actor)
+
+
+@router.delete("/{environment_id}", status_code=204)
+def delete_environment(
+    environment_id: UUID,
+    context: tuple[str, str] = Depends(request_context),
+    session: Session = Depends(get_session),
+):
+    service = get_service(session)
+    environment = service.get_environment(environment_id)
+    if environment is None:
+        raise HTTPException(status_code=404, detail="Environment not found")
+    if service.is_referenced(environment_id):
+        raise HTTPException(status_code=409, detail="Environment is still referenced by assets")
+    actor, request_id = context
+    service.delete_environment(environment, request_id, actor)
+    return Response(status_code=204)
