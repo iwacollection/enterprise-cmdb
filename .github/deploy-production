@@ -1,4 +1,5 @@
 production deployment trigger
-source_main=e0b184e34bdb2a4a9ee3ded8b5fbbaa5109f2c71
-attempt=2
+source_main=f8ff7f45c47ed5b3456a564f2b512bb3b9b255ae
+attempt=3
+mode=quota-aware
 observability=result-file
