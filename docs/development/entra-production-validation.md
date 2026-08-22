@@ -1,6 +1,6 @@
 # Entra Production Validation
 
-This branch exists only to run the complete delivery gate against the latest `main` after Microsoft Entra EasyAuth, application RBAC, federated identity, production deployment wiring, and one-shot GitHub OIDC bootstrap automation.
+This branch exists only to run the complete delivery gate against the latest `main` after Microsoft Entra EasyAuth, application RBAC, federated identity, production deployment wiring, one-shot GitHub OIDC bootstrap automation, and the recorded real Azure login failure.
 
 Required checks:
 
@@ -14,6 +14,6 @@ Required checks:
 - Azure OIDC bootstrap shell syntax
 - Azure Bicep compile including Microsoft Graph v1.0 extension
 
-Any failure is a release defect and must be fixed before Azure production deployment is triggered.
+Any failure is a release defect and must be fixed before Azure production deployment is retried.
 
-Validation iteration 3 includes the account-boundary bootstrap path after the first real Azure login failure.
+Validation iteration 4 is the final repository gate against the latest main, including account-boundary documentation and bootstrap automation.
