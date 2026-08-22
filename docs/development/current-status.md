@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-**V0.3 Domain Core complete. Microsoft Entra production security path validated. Azure actual deployment is the active phase.**
+**V0.3 Domain Core complete. Microsoft Entra production security path validated. Azure actual deployment reached the account credential boundary.**
 
 ## Completed
 
@@ -63,7 +63,8 @@ GitHub Actions validates:
 9. Docker Compose configuration
 10. Real PostgreSQL 16 + Alembic + FastAPI `/health` and `/ready` smoke test
 11. Docker build using frozen dependencies
-12. Azure Bicep compile including Microsoft Graph v1.0 extension and EasyAuth/FIC resources
+12. Azure OIDC bootstrap shell syntax
+13. Azure Bicep compile including Microsoft Graph v1.0 extension and EasyAuth/FIC resources
 
 Current production-security validation result: `29 passed`, PostgreSQL runtime smoke succeeded, frozen Docker build succeeded, and Microsoft Graph/EasyAuth Bicep compilation succeeded. The remaining pytest warning is from the third-party FastAPI/Starlette TestClient compatibility layer.
 
@@ -83,17 +84,40 @@ Current production-security validation result: `29 passed`, PostgreSQL runtime s
 - Liveness / readiness probes
 - GitHub Actions OIDC deployment workflow
 - Fail-closed deployment ordering: private app + auth verification before external ingress
+- Persistent non-sensitive deployment result on `deploy/azure-production`
+- One-shot account bootstrap script at `infra/azure/bootstrap-github-oidc.sh`
 
-## Active Production Gate
+## Real Azure Deployment Evidence
 
-The application architecture decision is complete. Actual Azure resource creation now depends on the target tenant/account boundary:
+Production deployment was actually triggered from `deploy/azure-production`.
 
-1. GitHub `production` environment must contain working `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and `AZURE_POSTGRES_ADMIN_PASSWORD` secrets.
-2. The GitHub OIDC identity needs Azure resource deployment permission, `Microsoft.Authorization/roleAssignments/write`, and ACR push permission.
-3. The deployment identity needs Microsoft Graph application permission for the Entra application/service-principal resources, preferably least-privilege `Application.ReadWrite.OwnedBy` with tenant admin consent.
-4. After deployment, a tenant administrator must explicitly assign real users/groups to `CMDB.Reader` or `CMDB.Admin`.
+Observed run:
 
-The repository intentionally does not automate human/group role assignment because no tenant principal IDs have been supplied and doing so would require broader Graph app-role-assignment permissions.
+```text
+run_id: 32583001170
+status: failure
+failure_step: Azure login with OIDC
+```
+
+The runner reported that `client-id` and `tenant-id` were not supplied. The environment also showed an empty PostgreSQL administrator password. `Validate required secret`, resource-group creation, Bicep deployment, ACR login/push, Container App deployment, Entra provisioning, and external ingress were all skipped after the login failure.
+
+Therefore this observed run did **not** reach an Azure resource mutation step. The failure is an account/environment configuration boundary, not an application or IaC failure.
+
+## Active Account Gate
+
+The repository now supplies a one-shot bootstrap:
+
+```bash
+az login
+gh auth login
+bash infra/azure/bootstrap-github-oidc.sh
+```
+
+It uses the currently selected Azure subscription to create/reuse the dedicated GitHub deployment service principal, configure the `production` GitHub OIDC federated credential, create the target resource group, grant resource-group-scoped `Contributor`, `Role Based Access Control Administrator`, and `AcrPush`, request/admin-consent Microsoft Graph `Application.ReadWrite.OwnedBy`, generate the PostgreSQL administrator secret, store the four GitHub `production` environment secrets, and retrigger the Azure deployment.
+
+This is the only remaining unavoidable account boundary. The signed-in Azure identity must itself have permission to create Entra applications, assign the required Azure roles, and grant tenant admin consent. Those account privileges cannot be manufactured by repository code.
+
+After the first successful deployment, a tenant administrator must explicitly assign real users/groups to `CMDB.Reader` or `CMDB.Admin`. The repository intentionally does not automate human/group role assignment because no tenant principal IDs have been supplied and doing so would require broader Graph app-role-assignment permissions.
 
 ## Engineering Constraints
 
