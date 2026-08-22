@@ -65,6 +65,10 @@ jobs:
       - name: Build container
         run: docker build -t enterprise-cmdb:test .
 
+      - name: Test Azure quota policy
+        working-directory: ${{ github.workspace }}
+        run: python3 -m unittest discover -s infra/azure/tests -p 'test_*.py' -v
+
       - name: Validate Azure Bicep
         working-directory: ${{ github.workspace }}
         run: az bicep build --file infra/azure/main.bicep --stdout > /dev/null
