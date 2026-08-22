@@ -1,11 +1,17 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.dependency import get_session
 from app.domain.asset.repository import AssetRepository
-from app.domain.asset.schema import AssetCreate, AssetResponse, AssetUpdate
+from app.domain.asset.schema import (
+    AssetCreate,
+    AssetResponse,
+    AssetStatus,
+    AssetType,
+    AssetUpdate,
+)
 from app.domain.asset.service import AssetService
 
 
@@ -24,8 +30,23 @@ def request_context(
 
 
 @router.get("", response_model=list[AssetResponse])
-def list_assets(session: Session = Depends(get_session)):
-    return get_asset_service(session).list_assets()
+def list_assets(
+    name: str | None = None,
+    asset_type: AssetType | None = None,
+    status: AssetStatus | None = None,
+    environment_id: UUID | None = None,
+    team_id: str | None = None,
+    service_id: str | None = None,
+    session: Session = Depends(get_session),
+):
+    return get_asset_service(session).list_assets(
+        name=name,
+        asset_type=asset_type,
+        status=status,
+        environment_id=environment_id,
+        team_id=team_id,
+        service_id=service_id,
+    )
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)
