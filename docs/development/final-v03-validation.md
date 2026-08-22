@@ -16,4 +16,4 @@ Required checks:
 
 Any failure is treated as a development defect and must be fixed before V0.3 core is considered complete.
 
-Validation iteration 7 is the authoritative final technical delivery gate against the latest main branch.
+Validation iteration 8 verifies the documented final main branch after the successful technical delivery gate.
