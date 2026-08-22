@@ -1,15 +1,15 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TeamCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=128)
     description: str | None = None
 
 
 class TeamUpdate(BaseModel):
-    name: str
+    name: str = Field(max_length=128)
     description: str | None = None
 
 
