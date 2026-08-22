@@ -4,9 +4,9 @@
 
 ## Current Version
 
-**V0.3 Core Complete / Azure Deploy-Ready**
+**V0.3 Core Complete / Entra Production Path Validated / Azure Deployment In Progress**
 
-数据库 Schema 已冻结在 V0.3。应用、迁移、容器镜像和 Azure Bicep 均已纳入 GitHub Actions 验证。
+数据库 Schema 仍冻结在 V0.3，没有为认证扩张 CMDB 业务 Schema。应用、迁移、容器、Microsoft Entra RBAC、Microsoft Graph Bicep 和 Azure 运行时均纳入 GitHub Actions 验证。
 
 ## Implemented
 
@@ -23,14 +23,19 @@
 - Kubernetes Cluster Detail：K8s Version
 - Asset Relation Graph（资产依赖关系）
 - Transactional Audit（事务型变更审计）
-- Web Console（同源管理界面，覆盖 V0.3 允许的创建/编辑/删除操作）
+- Web Console（覆盖 V0.3 允许的创建/编辑/删除操作）
+- Microsoft Entra ID EasyAuth
+- `CMDB.Reader` / `CMDB.Admin` App Role RBAC
+- Entra Object ID trusted audit actor
+- Secretless EasyAuth via User Assigned Managed Identity + Federated Identity Credential
 - Health / Database Readiness
 - PostgreSQL + Alembic
 - Docker runtime
 - Frozen `uv.lock` dependency graph
 - GitHub Actions CI
 - Azure Container Apps + ACR + private PostgreSQL Bicep
-- GitHub Actions Azure OIDC deployment workflow
+- Microsoft Graph Bicep v1.0 Entra provisioning
+- GitHub Actions Azure OIDC production deployment workflow
 
 ## Core Model
 
@@ -47,12 +52,28 @@ Environment
 
 Asset 有一个明确的 Primary Owner Team；Asset 与 Service 使用多对多映射。所有可变核心配置通过 `ChangeRecord` 保留操作者、请求 ID、before/after，并与业务变更在同一数据库事务提交。
 
+生产环境的 `changed_by` 来自 EasyAuth 已验证 Entra Principal 的 Object ID，不再信任调用方自行填写的 `X-CMDB-Actor`。本地开发模式仍允许通过该 Header 标识写操作人。
+
+## Authorization Model
+
+```text
+Microsoft Entra ID
+        |
+        +-- CMDB.Reader --> GET CMDB data / audit
+        |
+        +-- CMDB.Admin  --> GET + existing audited writes/deletes
+```
+
+Entra Service Principal 设置 `appRoleAssignmentRequired=true`。未显式分配角色的租户用户不会被当作 CMDB 用户。V0.3 没有新增 User/Role/Binding 数据表。
+
 ## Local Run
 
 ```bash
 cd backend
 docker compose up --build
 ```
+
+本地默认 `CMDB_AUTH_MODE=local`：读操作无需身份；写操作要求 `X-CMDB-Actor`。Azure 生产部署设置 `CMDB_AUTH_MODE=entra`。
 
 启动过程会等待 PostgreSQL 健康并执行：
 
@@ -86,12 +107,12 @@ uv lock --check
 → Docker Compose validation
 → real PostgreSQL 16 + Alembic + FastAPI /health + /ready smoke test
 → frozen Docker build
-→ Azure Bicep compile
+→ Azure Bicep compile including Microsoft Graph v1.0 extension
 ```
 
-最终 V0.3 技术 Gate 已验证 `28 passed`，真实 PostgreSQL runtime 与 Azure Bicep 均通过。
+Entra 生产化 Gate 已验证 **29 tests passed**，其中包含 Reader/Admin 授权与可信审计身份；真实 PostgreSQL runtime、Frozen Docker 和 Graph/EasyAuth Bicep 均通过。
 
-## Azure Deployment
+## Azure Production Deployment
 
 目标运行时：
 
@@ -102,10 +123,12 @@ GitHub Actions OIDC
         |
         +--> Azure Container Apps
                   |
+                  +--> Microsoft Entra EasyAuth
+                  +--> CMDB.Reader / CMDB.Admin
                   +--> PostgreSQL Flexible Server (private network)
 ```
 
-实际云资源通过 `.github/workflows/deploy-azure.yml` 创建。默认 `external_ingress=false`，在生产 Authentication / Permission 策略确认前不会把无认证 CMDB 暴露到公网。
+部署采用 fail-closed 顺序：先私网部署应用和 Entra/FIC/AuthConfig，验证 EasyAuth 后才打开 external ingress。无认证访问 `/ui/` 必须被重定向到登录；`/health`、`/ready` 仅为平台探针保留。
 
 详见 `infra/azure/README.md` 与 `docs/deployment/azure-runtime-plan.md`。
 
@@ -118,12 +141,14 @@ GitHub Actions OIDC
 - 只在用户输入、网络、外部系统等系统边界校验
 - 不吞错误，优先快速失败
 - 核心变更必须可审计、可验证
+- 生产认证失败时保持 fail-closed，不先暴露公网再补认证
 
-## Remaining Production Decision
+## Remaining Production Gate
 
-V0.3 Domain Core 已完成。生产公网开放前仍需要明确：
+代码和 IaC 已选择并实现 Microsoft Entra ID + 两级 App Role RBAC。剩余不再是应用架构决策，而是目标 Azure/Entra 租户权限与真实身份映射：
 
-- Authentication Provider（例如 Microsoft Entra ID 或公司现有 SSO）
-- Permission Model（角色、作用域与身份映射）
+- GitHub `production` Environment 的 Azure OIDC secrets 必须真实可用。
+- 部署身份必须具备 Azure 资源部署、`roleAssignments/write`、ACR push，以及创建 Entra Application/Service Principal 所需的 Microsoft Graph 权限。
+- 首次部署完成后，需要由租户管理员把真实用户或组显式分配给 `CMDB.Reader` 或 `CMDB.Admin`。
 
-这两项会影响生产安全策略，不能由实现层自行假设。
+仓库不会猜测具体公司用户/组，也不会为了自动分配角色而无理由扩大 Graph 权限。
