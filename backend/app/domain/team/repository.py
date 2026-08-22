@@ -19,3 +19,12 @@ class TeamRepository:
         self.session.commit()
         self.session.refresh(team)
         return team
+
+    def update(self, team: Team) -> Team:
+        self.session.commit()
+        self.session.refresh(team)
+        return team
+
+    def delete(self, team: Team) -> None:
+        self.session.delete(team)
+        self.session.commit()
