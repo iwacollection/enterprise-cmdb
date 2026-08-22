@@ -87,7 +87,7 @@ def current_principal(
         return parse_easy_auth_principal(easy_auth_principal)
 
     if local_actor is None:
-        raise HTTPException(status_code=401, detail="X-CMDB-Actor is required in local mode")
+        return Principal(actor="local-readonly", roles=frozenset({READER_ROLE}))
     return Principal(actor=local_actor, roles=frozenset({READER_ROLE, ADMIN_ROLE}))
 
 
@@ -99,5 +99,7 @@ def require_reader(principal: Principal = Depends(current_principal)) -> Princip
 
 def require_admin(principal: Principal = Depends(current_principal)) -> Principal:
     if ADMIN_ROLE not in principal.roles:
+        if settings.auth_mode == "local":
+            raise HTTPException(status_code=401, detail="X-CMDB-Actor is required in local mode")
         raise HTTPException(status_code=403, detail="CMDB.Admin role required")
     return principal
