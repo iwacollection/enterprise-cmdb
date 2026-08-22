@@ -28,23 +28,16 @@ def _usage_items(document: dict[str, Any]) -> list[dict[str, Any]]:
 def _usage_item(document: dict[str, Any], resource_name: str) -> dict[str, Any]:
     for item in _usage_items(document):
         name = item.get("name", {})
-        if isinstance(name, dict) and (
-            name.get("value") == resource_name
-            or name.get("localizedValue") == resource_name
-        ):
+        if isinstance(name, dict) and (name.get("value") == resource_name or name.get("localizedValue") == resource_name):
             return item
         if isinstance(name, str) and name == resource_name:
             return item
         if item.get("resourceName") == resource_name:
             return item
 
-    # Azure quota APIs may omit resources that have not been allocated yet.
-    # Treat missing usage entries as zero usage instead of failing deployment.
-    return {
-        "name": {"value": resource_name},
-        "currentValue": 0,
-        "limit": 0,
-    }
+    # Azure quota API does not always return unused quota resources.
+    # Missing entries mean no observed usage, not a deployment error.
+    return {"name": {"value": resource_name}, "currentValue": 0, "limit": 0}
 
 
 def _numbers(item: dict[str, Any]) -> tuple[float, float]:
