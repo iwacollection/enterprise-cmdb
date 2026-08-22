@@ -63,6 +63,8 @@ def delete_team(
     team = service.get_team(team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")
+    if service.is_referenced(team_id):
+        raise HTTPException(status_code=409, detail="Team is still referenced")
     actor, request_id = context
     service.delete_team(team, request_id, actor)
     return Response(status_code=204)
