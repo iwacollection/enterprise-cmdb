@@ -22,6 +22,7 @@ def test_cmdb_core_api_flow():
 
     app.dependency_overrides[get_session] = override_session
     client = TestClient(app)
+    write_headers = {"X-CMDB-Actor": "integration-test"}
 
     readiness = client.get("/ready")
     assert readiness.status_code == 200
@@ -29,6 +30,7 @@ def test_cmdb_core_api_flow():
 
     environment = client.post(
         "/environments",
+        headers=write_headers,
         json={"name": "production", "description": "production environment"},
     )
     assert environment.status_code == 201
@@ -36,6 +38,7 @@ def test_cmdb_core_api_flow():
 
     team = client.post(
         "/teams",
+        headers=write_headers,
         json={"name": "platform", "description": "platform team"},
     )
     assert team.status_code == 201
@@ -43,6 +46,7 @@ def test_cmdb_core_api_flow():
 
     service = client.post(
         "/services",
+        headers=write_headers,
         json={"name": "orders", "team_id": team_id, "description": "order service"},
     )
     assert service.status_code == 201
@@ -50,7 +54,7 @@ def test_cmdb_core_api_flow():
 
     mysql = client.post(
         "/assets",
-        headers={"X-CMDB-Actor": "integration-test"},
+        headers=write_headers,
         json={
             "name": "mysql-prod",
             "asset_type": "database",
@@ -76,7 +80,7 @@ def test_cmdb_core_api_flow():
 
     redis = client.post(
         "/assets",
-        headers={"X-CMDB-Actor": "integration-test"},
+        headers=write_headers,
         json={
             "name": "redis-prod",
             "asset_type": "redis",
@@ -101,7 +105,7 @@ def test_cmdb_core_api_flow():
 
     relation = client.post(
         "/relations",
-        headers={"X-CMDB-Actor": "integration-test"},
+        headers=write_headers,
         json={
             "source_asset_id": mysql_id,
             "target_asset_id": redis_id,
@@ -120,5 +124,15 @@ def test_cmdb_core_api_flow():
     assert len(changes.json()) == 1
     assert changes.json()[0]["action"] == "create"
     assert changes.json()[0]["after"]["detail"]["engine"] == "mysql"
+
+    all_changes = client.get("/changes?changed_by=integration-test")
+    assert all_changes.status_code == 200
+    assert {change["entity_type"] for change in all_changes.json()} == {
+        "environment",
+        "team",
+        "service",
+        "asset",
+        "asset_relation",
+    }
 
     app.dependency_overrides.clear()
