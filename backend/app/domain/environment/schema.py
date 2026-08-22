@@ -1,16 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EnvironmentCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=128)
     description: str | None = None
 
 
 class EnvironmentUpdate(BaseModel):
-    name: str
+    name: str = Field(max_length=128)
     description: str | None = None
 
 
