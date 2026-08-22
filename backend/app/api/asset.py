@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.auth import require_reader
 from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.asset.repository import AssetRepository
@@ -16,7 +17,7 @@ from app.domain.asset.schema import (
 from app.domain.asset.service import AssetService
 
 
-router = APIRouter(prefix="/assets", tags=["assets"])
+router = APIRouter(prefix="/assets", tags=["assets"], dependencies=[Depends(require_reader)])
 
 
 def get_asset_service(session: Session) -> AssetService:
