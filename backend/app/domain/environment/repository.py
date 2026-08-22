@@ -10,3 +10,9 @@ class EnvironmentRepository:
 
     def list(self) -> list[Environment]:
         return list(self.session.scalars(select(Environment)).all())
+
+    def create(self, environment: Environment) -> Environment:
+        self.session.add(environment)
+        self.session.commit()
+        self.session.refresh(environment)
+        return environment
