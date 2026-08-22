@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.auth import require_reader
 from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.team.repository import TeamRepository
@@ -8,7 +9,7 @@ from app.domain.team.schema import TeamCreate, TeamResponse, TeamUpdate
 from app.domain.team.service import TeamService
 
 
-router = APIRouter(prefix="/teams", tags=["teams"])
+router = APIRouter(prefix="/teams", tags=["teams"], dependencies=[Depends(require_reader)])
 
 
 def get_service(session: Session) -> TeamService:
