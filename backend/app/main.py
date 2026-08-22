@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 
 from app.api.asset import router as asset_router
+from app.api.audit import router as audit_router
 from app.api.environment import router as environment_router
 from app.api.health import router as health_router
+from app.api.relation import router as relation_router
 from app.api.service import router as service_router
 from app.api.team import router as team_router
 from app.config.settings import settings
@@ -14,6 +16,8 @@ app.include_router(environment_router)
 app.include_router(team_router)
 app.include_router(service_router)
 app.include_router(asset_router)
+app.include_router(relation_router)
+app.include_router(audit_router)
 
 
 if __name__ == "__main__":
