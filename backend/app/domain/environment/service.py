@@ -15,6 +15,9 @@ class EnvironmentService:
     def get_environment(self, environment_id: UUID) -> Environment | None:
         return self.repository.get_by_id(environment_id)
 
+    def name_in_use(self, name: str, exclude_id: UUID | None = None) -> bool:
+        return self.repository.name_in_use(name, exclude_id)
+
     def is_referenced(self, environment_id: UUID) -> bool:
         return self.repository.is_referenced(environment_id)
 
