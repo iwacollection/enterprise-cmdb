@@ -37,6 +37,8 @@ def create_service(
     layer = get_service_layer(session)
     if not layer.team_exists(payload.team_id):
         raise HTTPException(status_code=404, detail="Team not found")
+    if layer.name_in_use(payload.name):
+        raise HTTPException(status_code=409, detail="Service name already exists")
     actor, request_id = context
     return layer.create_service(payload, request_id, actor)
 
@@ -54,6 +56,8 @@ def update_service(
         raise HTTPException(status_code=404, detail="Service not found")
     if not layer.team_exists(payload.team_id):
         raise HTTPException(status_code=404, detail="Team not found")
+    if layer.name_in_use(payload.name, service_id):
+        raise HTTPException(status_code=409, detail="Service name already exists")
     actor, request_id = context
     return layer.update_service(service, payload, request_id, actor)
 
