@@ -1,20 +1,21 @@
-"""Alembic migration runtime boundary.
-
-Database URL is provided by runtime configuration.
-"""
+"""Alembic migration runtime boundary."""
 
 from alembic import context
 
+from app.config.settings import settings
 from app.database.base import Base
 from app.domain.environment import model as environment_model
+from app.domain.service import model as service_model
+from app.domain.team import model as team_model
 
 config = context.config
+config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
 def run_migrations_offline():
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=settings.database_url,
         target_metadata=target_metadata,
         literal_binds=True,
     )
