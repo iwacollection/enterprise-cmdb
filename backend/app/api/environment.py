@@ -3,13 +3,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.auth import require_reader
 from app.api.context import request_context
 from app.database.dependency import get_session
 from app.domain.environment.repository import EnvironmentRepository
 from app.domain.environment.schema import EnvironmentCreate, EnvironmentResponse, EnvironmentUpdate
 from app.domain.environment.service import EnvironmentService
 
-router = APIRouter(prefix="/environments", tags=["environments"])
+router = APIRouter(
+    prefix="/environments",
+    tags=["environments"],
+    dependencies=[Depends(require_reader)],
+)
 
 
 def get_service(session: Session) -> EnvironmentService:
