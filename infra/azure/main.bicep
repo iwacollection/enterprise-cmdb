@@ -38,11 +38,11 @@ param maxReplicas int = 3
 var suffix = uniqueString(resourceGroup().id)
 var acrName = toLower('${namePrefix}${suffix}')
 var postgresServerName = toLower('${namePrefix}-pg-${suffix}')
-var containerAppName = '${namePrefix}-app'
+var appResourceName = '${namePrefix}-app'
 var databaseName = 'cmdb'
 var privateDnsZoneName = 'privatelink.postgres.database.azure.com'
 var acrPullRoleDefinitionId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions'
+  'Microsoft.Authorization/roleDefinitions',
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 )
 
@@ -115,9 +115,9 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
     features: {
       enableLogAccessUsingOnlyResourcePermissions: true
     }
-  }
-  sku: {
-    name: 'PerGB2018'
+    sku: {
+      name: 'PerGB2018'
+    }
   }
 }
 
@@ -243,7 +243,7 @@ var databaseEnvironment = [
 ]
 
 resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployContainerApp) {
-  name: containerAppName
+  name: appResourceName
   location: location
   identity: {
     type: 'UserAssigned'
@@ -294,7 +294,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
           ]
           env: databaseEnvironment
           resources: {
-            cpu: 0.25
+            cpu: json('0.25')
             memory: '0.5Gi'
           }
         }
@@ -305,7 +305,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
           image: containerImage
           env: databaseEnvironment
           resources: {
-            cpu: 0.5
+            cpu: json('0.5')
             memory: '1Gi'
           }
           probes: [
@@ -347,4 +347,4 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = if (deployConta
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output postgresHost string = postgresServer.properties.fullyQualifiedDomainName
-output containerAppName string = containerAppName
+output containerAppName string = appResourceName
