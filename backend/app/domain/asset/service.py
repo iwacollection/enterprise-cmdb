@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from app.domain.asset.repository import AssetRepository
 from app.domain.asset.schema import AssetCreate, AssetUpdate
 
@@ -6,8 +8,23 @@ class AssetService:
     def __init__(self, repository: AssetRepository):
         self.repository = repository
 
-    def list_assets(self) -> list[dict]:
-        return self.repository.list()
+    def list_assets(
+        self,
+        name: str | None = None,
+        asset_type: str | None = None,
+        status: str | None = None,
+        environment_id: UUID | None = None,
+        team_id: str | None = None,
+        service_id: str | None = None,
+    ) -> list[dict]:
+        return self.repository.list(
+            name=name,
+            asset_type=asset_type,
+            status=status,
+            environment_id=environment_id,
+            team_id=team_id,
+            service_id=service_id,
+        )
 
     def get_asset(self, asset_id: str) -> dict | None:
         return self.repository.get_by_id(asset_id)
