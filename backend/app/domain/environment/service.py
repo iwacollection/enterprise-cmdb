@@ -15,18 +15,30 @@ class EnvironmentService:
     def get_environment(self, environment_id: UUID) -> Environment | None:
         return self.repository.get_by_id(environment_id)
 
-    def create_environment(self, data: EnvironmentCreate) -> Environment:
+    def create_environment(
+        self,
+        data: EnvironmentCreate,
+        request_id: str,
+        changed_by: str,
+    ) -> Environment:
         environment = Environment(
             name=data.name,
             description=data.description,
         )
-        return self.repository.create(environment)
+        return self.repository.create(environment, request_id, changed_by)
 
     def update_environment(
         self,
         environment: Environment,
         data: EnvironmentUpdate,
+        request_id: str,
+        changed_by: str,
     ) -> Environment:
+        before = {
+            "id": str(environment.id),
+            "name": environment.name,
+            "description": environment.description,
+        }
         environment.name = data.name
         environment.description = data.description
-        return self.repository.update(environment)
+        return self.repository.update(environment, before, request_id, changed_by)
