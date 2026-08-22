@@ -13,6 +13,9 @@ class TeamService:
     def get_team(self, team_id: str) -> Team | None:
         return self.repository.get_by_id(team_id)
 
+    def name_in_use(self, name: str, exclude_id: str | None = None) -> bool:
+        return self.repository.name_in_use(name, exclude_id)
+
     def is_referenced(self, team_id: str) -> bool:
         return self.repository.is_referenced(team_id)
 
