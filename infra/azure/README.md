@@ -26,7 +26,8 @@ The application has no Azure SDK dependency. Azure concerns remain in `infra/azu
 - PostgreSQL name resolution uses `privatelink.postgres.database.azure.com`.
 - Container App external ingress defaults to `false`.
 - ACR admin credentials and anonymous pull are disabled.
-- A user-assigned managed identity receives only `AcrPull` for image pulls.
+- ACR `roleAssignmentMode` is explicitly pinned to `LegacyRegistryPermissions` so the legacy `AcrPull`/`AcrPush` roles used by this deployment remain deterministic if Azure changes the default mode in the future.
+- A user-assigned managed identity receives only `AcrPull` for application image pulls.
 
 The Container Apps environment remains externally capable so ingress can be enabled later without recreating the environment. The CMDB app itself stays non-public until an authentication policy is selected.
 
@@ -45,9 +46,10 @@ The deployment identity needs enough Azure RBAC permission to:
 
 1. create/update the selected resource group if the workflow is expected to create it,
 2. deploy the resources in that resource group,
-3. create the `AcrPull` role assignment for the Container App pull identity.
+3. create the `AcrPull` role assignment for the Container App pull identity,
+4. push the built `enterprise-cmdb` image to the created registry.
 
-The third operation requires `Microsoft.Authorization/roleAssignments/write`; plain `Contributor` alone is not sufficient. Scope these permissions as narrowly as the organization's Azure governance model permits.
+The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; plain `Contributor` alone is not sufficient for that operation. Image push requires `AcrPush` on this RBAC-only registry. Scope these permissions as narrowly as the organization's Azure governance model permits.
 
 ## Deployment workflow
 
@@ -82,7 +84,7 @@ Azure sets database settings as separate environment variables so passwords with
 - `CMDB_DB_PASSWORD`
 - `CMDB_DB_NAME`
 
-`DATABASE_URL` remains supported for local development and CI.
+`DATABASE_URL` remains supported for local development and CI. Component-based PostgreSQL configuration uses `sslmode=require`.
 
 ## Health semantics
 
