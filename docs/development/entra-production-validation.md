@@ -1,6 +1,6 @@
 # Entra Production Validation
 
-This branch exists only to run the complete delivery gate against the latest `main` after Microsoft Entra EasyAuth, application RBAC, federated identity, and production deployment wiring.
+This branch exists only to run the complete delivery gate against the latest `main` after Microsoft Entra EasyAuth, application RBAC, federated identity, production deployment wiring, and one-shot GitHub OIDC bootstrap automation.
 
 Required checks:
 
@@ -11,8 +11,9 @@ Required checks:
 - Alembic upgrade / drift check / downgrade / upgrade
 - Docker Compose PostgreSQL runtime smoke
 - frozen Docker build
+- Azure OIDC bootstrap shell syntax
 - Azure Bicep compile including Microsoft Graph v1.0 extension
 
 Any failure is a release defect and must be fixed before Azure production deployment is triggered.
 
-Validation iteration 2 includes the optional local actor OpenAPI contract fix.
+Validation iteration 3 includes the account-boundary bootstrap path after the first real Azure login failure.
