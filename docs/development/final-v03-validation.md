@@ -15,4 +15,4 @@ Required checks:
 
 Any failure is treated as a development defect and must be fixed before V0.3 core is considered complete.
 
-Validation iteration 5 is the final technical delivery gate against the latest main branch.
+Validation iteration 6 is the authoritative final technical delivery gate against the latest main branch, including the committed uv.lock and frozen CI/Docker installs.
