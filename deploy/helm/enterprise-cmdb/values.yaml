@@ -1,0 +1,14 @@
+image:
+  repository: ""
+  tag: latest
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8000
+
+namespace: enterprise-cmdb
+
+postgres:
+  existingSecret: enterprise-cmdb-db
