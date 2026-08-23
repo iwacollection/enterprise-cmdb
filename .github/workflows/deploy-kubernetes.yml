@@ -51,7 +51,6 @@ jobs:
             exit 1
           fi
 
-          echo "Checking ACR: $ACR_NAME"
           az acr show --name "$ACR_NAME" --query "{name:name,loginServer:loginServer}" -o json
 
           TOKEN=$(az acr login \
@@ -71,8 +70,9 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
+            -f backend/Dockerfile \
             -t "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
-            .
+            backend
 
           docker push "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG"
 
