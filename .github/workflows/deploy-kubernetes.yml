@@ -31,40 +31,38 @@ jobs:
           RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
           CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
         run: |
-          if [ -z "$RESOURCE_GROUP" ] || [ -z "$CLUSTER_NAME" ]; then
-            echo "Missing AKS_RESOURCE_GROUP or AKS_CLUSTER_NAME secret"
-            exit 1
-          fi
-
           az aks get-credentials \
             --resource-group "$RESOURCE_GROUP" \
             --name "$CLUSTER_NAME" \
             --overwrite-existing
-
-          kubectl version --client
           kubectl get nodes
 
       - name: Login ACR
         env:
           ACR_NAME: ${{ secrets.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
-          if [ -z "$ACR_NAME" ]; then
-            echo "Missing ACR_NAME secret"
+          if [ -z "$ACR_NAME" ] || [ -z "$ACR_LOGIN_SERVER" ]; then
+            echo "Missing ACR secrets"
             exit 1
           fi
 
-          az acr login --name "$ACR_NAME"
+          TOKEN=$(az acr login \
+            --name "$ACR_NAME" \
+            --expose-token \
+            --query accessToken \
+            -o tsv)
+
+          echo "$TOKEN" | docker login \
+            "$ACR_LOGIN_SERVER" \
+            --username 00000000-0000-0000-0000-000000000000 \
+            --password-stdin
 
       - name: Build and push CMDB image
         env:
           ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          if [ -z "$ACR_LOGIN_SERVER" ]; then
-            echo "Missing ACR_LOGIN_SERVER secret"
-            exit 1
-          fi
-
           docker build \
             -t "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
             .
@@ -85,10 +83,7 @@ jobs:
             -n "$NAMESPACE"
 
           if ! kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s; then
-            echo "=== Deployment diagnostics ==="
-            kubectl get deployments -n "$NAMESPACE" -o wide || true
             kubectl get pods -n "$NAMESPACE" -o wide || true
-            kubectl describe deployment enterprise-cmdb -n "$NAMESPACE" || true
             kubectl describe pods -n "$NAMESPACE" || true
             kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp || true
             kubectl logs -n "$NAMESPACE" -l app=enterprise-cmdb --tail=200 || true
