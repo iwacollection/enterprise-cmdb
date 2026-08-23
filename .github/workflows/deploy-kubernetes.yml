@@ -19,30 +19,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login Azure with OIDC
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Configure AKS credentials
-        env:
-          RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
-          CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
-        run: |
-          az aks get-credentials \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$CLUSTER_NAME" \
-            --overwrite-existing
-          kubectl get nodes
-
-      - name: Ensure AKS kubelet can pull ACR images
+      - name: Unified AKS CMDB Deployment Pipeline
         env:
           RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
           CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
           ACR_NAME: ${{ secrets.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          NAMESPACE: ${{ inputs.namespace }}
+          CMDB_DATABASE_URL: ${{ secrets.CMDB_DATABASE_URL }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
+          set -euo pipefail
+
+          echo '========== AKS CREDENTIAL =========='
+          az aks get-credentials \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CLUSTER_NAME" \
+            --overwrite-existing
+
+          kubectl get nodes
+
+          echo '========== AKS KUBELET ACR PERMISSION =========='
           KUBELET_OBJECT_ID=$(az aks show \
             --resource-group "$RESOURCE_GROUP" \
             --name "$CLUSTER_NAME" \
@@ -60,27 +57,9 @@ jobs:
             --role AcrPull \
             --scope "$ACR_ID" || true
 
-      - name: Login ACR
-        env:
-          ACR_NAME: ${{ secrets.ACR_NAME }}
-          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-        run: |
-          TOKEN=$(az acr login \
-            --name "$ACR_NAME" \
-            --expose-token \
-            --query accessToken \
-            -o tsv)
+          echo '========== BUILD AND PUSH =========='
+          az acr login --name "$ACR_NAME"
 
-          echo "$TOKEN" | docker login \
-            "$ACR_LOGIN_SERVER" \
-            --username 00000000-0000-0000-0000-000000000000 \
-            --password-stdin
-
-      - name: Build and push CMDB image
-        env:
-          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
           docker build \
             -f backend/Dockerfile \
             -t "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
@@ -88,15 +67,11 @@ jobs:
 
           docker push "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG"
 
-      - name: Create Kubernetes runtime secret
-        env:
-          NAMESPACE: ${{ inputs.namespace }}
-          CMDB_DATABASE_URL: ${{ secrets.CMDB_DATABASE_URL }}
-        run: |
+          echo '========== KUBERNETES SECRET =========='
           kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
           if [ -z "$CMDB_DATABASE_URL" ]; then
-            echo "Missing CMDB_DATABASE_URL secret"
+            echo 'Missing CMDB_DATABASE_URL'
             exit 1
           fi
 
@@ -105,21 +80,22 @@ jobs:
             -n "$NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Deploy stateless CMDB
-        env:
-          NAMESPACE: ${{ inputs.namespace }}
-          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
+          echo '========== DEPLOY =========='
           kubectl apply -k k8s/base -n "$NAMESPACE"
 
           kubectl set image deployment/enterprise-cmdb \
             cmdb="$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
             -n "$NAMESPACE"
 
-          kubectl rollout status deployment/enterprise-cmdb \
-            -n "$NAMESPACE" \
-            --timeout=180s
+          echo '========== ROLLOUT =========='
+          if ! kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s; then
+            echo '========== FAILURE DIAGNOSTICS =========='
+            kubectl get pods -n "$NAMESPACE" -o wide || true
+            kubectl describe pods -n "$NAMESPACE" || true
+            kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp || true
+            kubectl logs -n "$NAMESPACE" -l app=enterprise-cmdb --all-containers --tail=200 || true
+            exit 1
+          fi
 
           kubectl get pods -n "$NAMESPACE"
           kubectl get svc -n "$NAMESPACE"
