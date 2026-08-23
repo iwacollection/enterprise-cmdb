@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   deploy:
@@ -18,10 +19,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure kubectl
+      - name: Login Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AKS credentials
+        env:
+          RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+          CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
         run: |
-          echo "Configure cluster credentials here"
+          az aks get-credentials \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CLUSTER_NAME" \
+            --overwrite-existing
           kubectl version --client
+          kubectl get nodes
 
       - name: Deploy stateless CMDB
         env:
@@ -30,3 +45,4 @@ jobs:
           kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -k k8s/base -n "$NAMESPACE"
           kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s
+          kubectl get pods -n "$NAMESPACE"
