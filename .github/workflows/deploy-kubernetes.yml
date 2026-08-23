@@ -44,12 +44,45 @@ jobs:
           kubectl version --client
           kubectl get nodes
 
+      - name: Login ACR
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        run: |
+          if [ -z "$ACR_NAME" ]; then
+            echo "Missing ACR_NAME secret"
+            exit 1
+          fi
+
+          az acr login --name "$ACR_NAME"
+
+      - name: Build and push CMDB image
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          if [ -z "$ACR_LOGIN_SERVER" ]; then
+            echo "Missing ACR_LOGIN_SERVER secret"
+            exit 1
+          fi
+
+          docker build \
+            -t "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
+            .
+
+          docker push "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG"
+
       - name: Deploy stateless CMDB
         env:
           NAMESPACE: ${{ inputs.namespace }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -k k8s/base -n "$NAMESPACE"
+
+          kubectl set image deployment/enterprise-cmdb \
+            cmdb="$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
+            -n "$NAMESPACE"
 
           if ! kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s; then
             echo "=== Deployment diagnostics ==="
