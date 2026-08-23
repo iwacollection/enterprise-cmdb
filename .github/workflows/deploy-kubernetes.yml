@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Azure Login OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Unified AKS CMDB Deployment Pipeline
         env:
           RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
@@ -39,63 +46,28 @@ jobs:
 
           kubectl get nodes
 
-          echo '========== AKS KUBELET ACR PERMISSION =========='
-          KUBELET_OBJECT_ID=$(az aks show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$CLUSTER_NAME" \
-            --query identityProfile.kubeletidentity.objectId \
-            -o tsv)
+          echo '========== ACR PERMISSION =========='
+          KUBELET_OBJECT_ID=$(az aks show --resource-group "$RESOURCE_GROUP" --name "$CLUSTER_NAME" --query identityProfile.kubeletidentity.objectId -o tsv)
+          ACR_ID=$(az acr show --name "$ACR_NAME" --query id -o tsv)
+          az role assignment create --assignee-object-id "$KUBELET_OBJECT_ID" --assignee-principal-type ServicePrincipal --role AcrPull --scope "$ACR_ID" || true
 
-          ACR_ID=$(az acr show \
-            --name "$ACR_NAME" \
-            --query id \
-            -o tsv)
-
-          az role assignment create \
-            --assignee-object-id "$KUBELET_OBJECT_ID" \
-            --assignee-principal-type ServicePrincipal \
-            --role AcrPull \
-            --scope "$ACR_ID" || true
-
-          echo '========== BUILD AND PUSH =========='
+          echo '========== BUILD PUSH =========='
           az acr login --name "$ACR_NAME"
-
-          docker build \
-            -f backend/Dockerfile \
-            -t "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
-            backend
-
+          docker build -f backend/Dockerfile -t "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" backend
           docker push "$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG"
 
-          echo '========== KUBERNETES SECRET =========='
+          echo '========== SECRET =========='
           kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-
-          if [ -z "$CMDB_DATABASE_URL" ]; then
-            echo 'Missing CMDB_DATABASE_URL'
-            exit 1
-          fi
-
+          DATABASE_URL="${CMDB_DATABASE_URL:-postgresql://bootstrap-placeholder}"
           kubectl create secret generic enterprise-cmdb-secrets \
-            --from-literal=DATABASE_URL="$CMDB_DATABASE_URL" \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
             -n "$NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           echo '========== DEPLOY =========='
           kubectl apply -k k8s/base -n "$NAMESPACE"
-
-          kubectl set image deployment/enterprise-cmdb \
-            cmdb="$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" \
-            -n "$NAMESPACE"
+          kubectl set image deployment/enterprise-cmdb cmdb="$ACR_LOGIN_SERVER/enterprise-cmdb:$IMAGE_TAG" -n "$NAMESPACE"
 
           echo '========== ROLLOUT =========='
-          if ! kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s; then
-            echo '========== FAILURE DIAGNOSTICS =========='
-            kubectl get pods -n "$NAMESPACE" -o wide || true
-            kubectl describe pods -n "$NAMESPACE" || true
-            kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp || true
-            kubectl logs -n "$NAMESPACE" -l app=enterprise-cmdb --all-containers --tail=200 || true
-            exit 1
-          fi
-
+          kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s
           kubectl get pods -n "$NAMESPACE"
-          kubectl get svc -n "$NAMESPACE"
