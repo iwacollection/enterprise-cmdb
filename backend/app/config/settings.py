@@ -3,10 +3,21 @@ from dataclasses import dataclass
 from urllib.parse import quote_plus
 
 
+def _normalize_database_url(url: str) -> str:
+    """Normalize PostgreSQL URLs to psycopg3 SQLAlchemy dialect."""
+    if url.startswith("postgresql+psycopg2://"):
+        return url.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    return url
+
+
 def _database_url() -> str:
     explicit_url = os.environ.get("DATABASE_URL")
     if explicit_url:
-        return explicit_url
+        return _normalize_database_url(explicit_url)
 
     host = os.environ.get("CMDB_DB_HOST")
     if host is None:
