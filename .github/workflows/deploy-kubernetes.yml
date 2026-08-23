@@ -50,5 +50,17 @@ jobs:
         run: |
           kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -k k8s/base -n "$NAMESPACE"
-          kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s
+
+          if ! kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s; then
+            echo "=== Deployment diagnostics ==="
+            kubectl get deployments -n "$NAMESPACE" -o wide || true
+            kubectl get pods -n "$NAMESPACE" -o wide || true
+            kubectl describe deployment enterprise-cmdb -n "$NAMESPACE" || true
+            kubectl describe pods -n "$NAMESPACE" || true
+            kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp || true
+            kubectl logs -n "$NAMESPACE" -l app=enterprise-cmdb --tail=200 || true
+            exit 1
+          fi
+
           kubectl get pods -n "$NAMESPACE"
+          kubectl get svc -n "$NAMESPACE"
