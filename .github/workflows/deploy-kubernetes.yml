@@ -1,0 +1,32 @@
+name: Deploy Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        required: true
+        default: cmdb
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        run: |
+          echo "Configure cluster credentials here"
+          kubectl version --client
+
+      - name: Deploy stateless CMDB
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -k k8s/base -n "$NAMESPACE"
+          kubectl rollout status deployment/enterprise-cmdb -n "$NAMESPACE" --timeout=180s
