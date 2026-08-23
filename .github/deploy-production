@@ -1,0 +1,5 @@
+production deployment trigger
+source_main=f8ff7f45c47ed5b3456a564f2b512bb3b9b255ae
+attempt=3
+mode=quota-aware
+observability=result-file
