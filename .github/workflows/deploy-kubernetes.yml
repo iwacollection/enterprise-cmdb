@@ -31,10 +31,16 @@ jobs:
           RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
           CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
         run: |
+          if [ -z "$RESOURCE_GROUP" ] || [ -z "$CLUSTER_NAME" ]; then
+            echo "Missing AKS_RESOURCE_GROUP or AKS_CLUSTER_NAME secret"
+            exit 1
+          fi
+
           az aks get-credentials \
             --resource-group "$RESOURCE_GROUP" \
             --name "$CLUSTER_NAME" \
             --overwrite-existing
+
           kubectl version --client
           kubectl get nodes
 
