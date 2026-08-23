@@ -5,8 +5,8 @@
         "minimumLimit": 1,
         "requestIncrement": 1,
         "autoRequest": true,
-        "pollAttempts": 30,
-        "pollSeconds": 10
+        "pollAttempts": 120,
+        "pollSeconds": 15
       }
     },
     "environment": {
