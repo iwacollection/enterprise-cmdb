@@ -153,14 +153,15 @@ gh secret list \
   --repo "$REPO" \
   --env "$GITHUB_ENVIRONMENT"
 
-gh workflow run deploy-azure.yml \
+gh workflow run deploy-container-apps.yml \
   --repo "$REPO" \
-  --ref deploy/azure-production \
+  --ref main \
   -f resource_group="$RESOURCE_GROUP" \
   -f location="$LOCATION" \
-  -f name_prefix="$NAME_PREFIX"
+  -f name_prefix="$NAME_PREFIX" \
+  -f auto_request_quota=true
 
-echo "Azure OIDC bootstrap completed and production deployment was triggered."
+echo "Azure OIDC bootstrap completed and the manual Container Apps deployment workflow was triggered on main."
 echo "Deployment application client ID: $CLIENT_ID"
 echo "Resource-group deployment roles and subscription-level Quota Request Operator were configured."
-echo "Tenant ID and subscription ID were written to GitHub environment secrets and are not printed."
+echo "Tenant ID, subscription ID and generated PostgreSQL password were written to GitHub environment secrets."

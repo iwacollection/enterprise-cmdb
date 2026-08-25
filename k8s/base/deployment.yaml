@@ -14,6 +14,7 @@ spec:
       labels:
         app: enterprise-cmdb
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
         - name: cmdb
           image: enterprise-cmdb:latest
@@ -25,11 +26,17 @@ spec:
                 name: enterprise-cmdb-secrets
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: 8000
             initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
             initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3

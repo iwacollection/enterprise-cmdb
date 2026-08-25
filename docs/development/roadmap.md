@@ -1,61 +1,49 @@
 # CMDB Development Roadmap
 
-## V0.3 Completed
+## V0.3 completed
 
-### Domain
-
-- Environment
-- Team
-- Service
-- Asset core
-- Asset type-specific details
-- Asset N:M Service mapping
-- IP / Endpoint
-- Relation graph
-- Transactional audit
-
-### Platform
-
-- REST API
-- Web Console
+- Domain model and CRUD boundaries
+- Asset relation graph and transactional audit
+- Web Console and REST API
 - PostgreSQL + Alembic
 - Docker runtime
-- CI pipeline
+- CI validation
 - Azure Bicep infrastructure
-- Azure OIDC deployment workflow
-- Liveness and database readiness
+- Microsoft Entra EasyAuth / App Role path for Container Apps
+- AKS application deployment workflow and Kustomize baseline
 
-## Production Decision Gate
+## Next priorities
 
-These items intentionally remain unresolved because they require business/security input and can affect Schema or production access policy:
+### 1. AKS production hardening
 
-1. Authentication provider
-   - Microsoft Entra ID
-   - existing company SSO / identity gateway
-2. Permission model
-   - roles
-   - scope boundaries
-   - identity-to-role mapping
+- define the final production ingress and Microsoft Entra authentication boundary for AKS
+- add explicit network/security policy required by that boundary
+- add rollout/rollback operating guidance
+- verify database migration behavior during rolling deployment
 
-No User / Role / Binding Schema is introduced until this decision is made.
+### 2. Delivery governance
 
-## Explicit V0.3 Non-Goals
+- protect `main`
+- require CI before merge
+- keep deployment environments approval-gated
+- remove obsolete deployment branches after their history is no longer operationally needed
 
-Consistent with the Schema Freeze, V0.3 does not add:
+### 3. CMDB product capability
 
-- Dynamic CIType / EAV engine
-- Cloud resource synchronization
-- Kubernetes auto-discovery
-- IPAM
-- Workflow engine
-- Agent automation
+Only after production runtime is stable, evaluate the next product requirements such as cloud/Kubernetes discovery, reconciliation and relationship ingestion. These require a new scoped design rather than silently expanding V0.3.
 
-These require new requirements and a new design/version rather than being silently added to V0.3.
+## Explicit V0.3 non-goals
 
-## Engineering Rules
+- Dynamic EAV/CIType platform
+- Generic workflow engine
+- Unbounded plugin framework
+- Automatic self-healing
+- Multiple parallel deployment engines for the same runtime
 
-- No speculative features
-- Schema changes require design update and migration
-- Every feature requires tests
-- Core writes require audit
-- Every deployment path requires machine verification
+## Engineering rules
+
+- one source of truth per concern
+- schema changes require design + migration + tests
+- core writes require audit
+- production configuration fails closed
+- every supported deployment path must have machine verification

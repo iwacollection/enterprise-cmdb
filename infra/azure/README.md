@@ -1,72 +1,55 @@
-# Azure Deployment
+# Azure Container Apps Infrastructure
 
-## Runtime topology
+This directory owns the Azure Container Apps full-stack runtime. It is separate from the AKS application delivery path under `k8s/`.
+
+## Topology
 
 ```text
-GitHub Actions (OIDC)
+GitHub Actions OIDC
         |
-        +--> Azure quota preflight / supported quota request
-        |
+        +--> quota preflight
         +--> Azure Container Registry
-        |
-        +--> Azure Container Apps Environment -- VNet -- PostgreSQL Flexible Server
-                     |                              |
-                     |                              +-- private delegated subnet
-                     |
-                     +-- enterprise-cmdb Container App
-                         +-- init container: alembic upgrade head
-                         +-- app container: FastAPI + Web Console
-                         +-- Microsoft Entra EasyAuth
-                         +-- CMDB.Reader / CMDB.Admin App Roles
-                         +-- User Assigned Managed Identity + FIC
+        +--> Azure Container Apps Environment
+                  |
+                  +--> enterprise-cmdb Container App
+                  |      +-- Alembic init migration
+                  |      +-- FastAPI + Web Console
+                  |      +-- Microsoft Entra EasyAuth
+                  |
+                  +--> VNet
+                         |
+                         +--> PostgreSQL Flexible Server
+                              private delegated subnet
+                              private DNS
 ```
 
-The application has no Azure SDK dependency. Azure concerns remain in `infra/azure` and GitHub Actions.
+## Source of truth
 
-## Network baseline
+- `main.bicep` — Azure runtime infrastructure
+- `entra.bicep` — Entra application/service principal/App Roles/FIC
+- `quota-policy.json` — versioned quota policy
+- `quota_guard.py` — quota decision logic
+- `bootstrap-github-oidc.sh` — one-time account/OIDC bootstrap
+- `.github/workflows/deploy-container-apps.yml` — manual deployment orchestration
 
-- Container Apps uses a dedicated VNet subnet delegated to `Microsoft.App/environments`.
-- PostgreSQL Flexible Server uses a separate delegated subnet.
+The application itself has no Azure SDK dependency.
+
+## Security baseline
+
 - PostgreSQL public network access is disabled.
-- PostgreSQL name resolution uses `privatelink.postgres.database.azure.com`.
+- PostgreSQL and Container Apps use separate delegated subnets.
 - ACR admin credentials and anonymous pull are disabled.
-- ACR `roleAssignmentMode` is explicitly pinned to `LegacyRegistryPermissions` so the `AcrPull`/`AcrPush` roles used by this deployment remain deterministic.
-- A dedicated user-assigned managed identity receives only `AcrPull` for application image pulls.
-- The application is deployed with external ingress disabled first. External ingress is enabled only after EasyAuth configuration has been created and verified.
-
-## Production identity model
-
-Production authentication is Microsoft Entra ID through Azure Container Apps built-in authentication (EasyAuth).
-
-The deployment creates a single-tenant Entra application with exactly two application roles:
-
-- `CMDB.Reader`: read Environment, Team, Service, Asset, Relation, and Audit data.
-- `CMDB.Admin`: read and perform the existing audited CMDB writes and deletes.
-
-The service principal sets `appRoleAssignmentRequired=true`. A tenant user without either role is not intentionally admitted to the CMDB.
-
-The application does not maintain a second User/Role database. EasyAuth validates the Entra identity and injects `X-MS-CLIENT-PRINCIPAL`; the FastAPI authorization boundary reads the role claim and uses the Entra object ID as `ChangeRecord.changed_by` for production audit records.
-
-Local development remains separate: `CMDB_AUTH_MODE=local` permits anonymous reads and requires `X-CMDB-Actor` for writes. Azure sets `CMDB_AUTH_MODE=entra`.
-
-## Secretless EasyAuth
-
-No long-lived Entra client secret is stored in GitHub or Container Apps.
-
-`infra/azure/entra.bicep` creates:
-
-1. the Entra application,
-2. its service principal,
-3. `CMDB.Reader` and `CMDB.Admin` App Roles,
-4. a federated identity credential that trusts the Container App authentication managed identity.
-
-The Container App auth configuration uses that user-assigned managed identity for the EasyAuth client assertion. The token store is not enabled because the CMDB does not need to call downstream APIs with the signed-in user's token.
+- Application image pull uses managed identity with `AcrPull`.
+- External ingress is disabled during initial deployment.
+- Microsoft Entra EasyAuth is configured and verified before external ingress is enabled.
+- `CMDB.Reader` and `CMDB.Admin` App Roles are provisioned.
+- `appRoleAssignmentRequired=true` requires explicit user/group role assignment.
+- The application trusts the EasyAuth principal boundary in `CMDB_AUTH_MODE=entra` and records the Entra object ID as the production audit actor.
+- GitHub authenticates to Azure with OIDC; no long-lived Azure client secret is required.
 
 ## One-time GitHub OIDC bootstrap
 
-A real production deployment was triggered from `deploy/azure-production`. The observed run `32583001170` failed at `azure/login` before any Azure resource deployment step because the GitHub `production` environment did not provide `AZURE_CLIENT_ID` / `AZURE_TENANT_ID`; `AZURE_POSTGRES_ADMIN_PASSWORD` was also absent.
-
-The repository contains a one-shot bootstrap for this account boundary:
+Run from an operator workstation with Azure CLI and GitHub CLI authentication:
 
 ```bash
 az login
@@ -74,93 +57,71 @@ gh auth login
 bash infra/azure/bootstrap-github-oidc.sh
 ```
 
-The script is intentionally fail-fast. It does the following against the currently selected Azure subscription:
+The script creates/reuses the deployment application and service principal, configures the GitHub `production` environment federated credential, prepares the resource group and required Azure roles, grants the Microsoft Graph application permission used by the Entra Bicep deployment, generates the PostgreSQL password, writes required GitHub environment secrets, and triggers the manual Container Apps deployment workflow on `main`.
 
-1. creates or reuses the dedicated `github-enterprise-cmdb-deployer` Entra application and service principal,
-2. creates the GitHub environment federated credential with subject `repo:iwacollection/enterprise-cmdb:environment:production`,
-3. creates `rg-enterprise-cmdb` in `eastasia` if needed,
-4. grants the deployment service principal `Contributor`, `Role Based Access Control Administrator`, and `AcrPush` at resource-group scope,
-5. grants `Quota Request Operator` at subscription scope so the deployment identity can read quota, register the Quota provider, and create supported quota requests without receiving broad subscription Contributor access,
-6. requests Microsoft Graph `Application.ReadWrite.OwnedBy` and performs admin consent,
-7. generates a strong PostgreSQL administrator password without printing it,
-8. writes the four required values to GitHub `production` environment secrets with `gh secret set`,
-9. triggers `deploy-azure.yml` on `deploy/azure-production`.
+The signed-in operator must already be allowed to create Entra applications, assign the required Azure roles and grant the required tenant admin consent. The script fails at that boundary rather than weakening permissions.
 
-This bootstrap requires the signed-in Azure user to be allowed to create Entra applications, assign the resource-group deployment roles, assign `Quota Request Operator` at subscription scope, and grant tenant admin consent for the Graph application permission. If any of those account-level permissions are missing, the script stops at that exact boundary instead of weakening the deployment identity.
-
-## Required GitHub production secrets
-
-The `Deploy Azure` workflow uses Azure workload identity federation (OIDC). These GitHub `production` environment secrets are consumed:
+## Required GitHub `production` secrets
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
 - `AZURE_POSTGRES_ADMIN_PASSWORD`
 
-The bootstrap script sets them. The workflow also validates all four values before `azure/login`, so a missing value fails with its exact secret name. Do not store an Azure client secret in the repository.
-
 ## Deployment identity permissions
 
-The GitHub OIDC deployment identity needs Azure RBAC permission to:
+The GitHub OIDC deployment identity needs enough permission to:
 
-1. deploy resources in the selected resource group,
-2. create the `AcrPull` role assignment for the Container App pull identity,
-3. push the built `enterprise-cmdb` image to ACR,
-4. read Azure Container Apps quota usage,
-5. register/use the Microsoft.Quota resource provider,
-6. submit supported quota increase requests.
+1. deploy resources in the target resource group,
+2. create the `AcrPull` assignment for the Container App pull identity,
+3. push the application image to ACR,
+4. read/register Azure quota capabilities and submit supported quota requests,
+5. create/update the Entra application and service principal used by EasyAuth.
 
-The role-assignment operation requires `Microsoft.Authorization/roleAssignments/write`; `Role Based Access Control Administrator` supplies that action at the resource-group scope without the broader authorization surface of `User Access Administrator`. Image push requires `AcrPush` on this RBAC-only registry. Quota operations use the built-in subscription-scoped `Quota Request Operator`, which includes `Microsoft.Quota/usages/read`, `Microsoft.Quota/quotas/write`, and `Microsoft.Quota/register/action`.
+The bootstrap currently configures resource-group `Contributor`, `Role Based Access Control Administrator`, `AcrPush`, subscription-scoped `Quota Request Operator`, and Microsoft Graph `Application.ReadWrite.OwnedBy` with admin consent.
 
-The same deployment identity also needs Microsoft Graph application permission to create/update the Entra application and service principal through the Microsoft Graph Bicep extension. The bootstrap requests the least-privilege `Application.ReadWrite.OwnedBy` permission with tenant admin consent rather than `Application.ReadWrite.All`.
+## Quota policy
 
-This deployment intentionally does **not** assign real users or groups to `CMDB.Reader` or `CMDB.Admin`. Automating that would require additional Graph app-role-assignment permission and a concrete tenant principal ID. Those privileges and mappings are not guessed by the repository.
+Quota requirements are versioned in `quota-policy.json` and evaluated by `quota_guard.py` before expensive deployment steps.
 
-## Quota-aware IaC policy
+- `ManagedEnvironmentCount` can be requested automatically when the workflow is allowed to do so.
+- `ManagedEnvironmentConsumptionCores` is treated as a manual-request boundary when the required free capacity is not available.
 
-Quota requirements are versioned in `infra/azure/quota-policy.json` and evaluated by `infra/azure/quota_guard.py` before expensive deployment steps.
-
-- `ManagedEnvironmentCount` is region scoped. If the target Container Apps environment does not already exist and the selected region has no free environment slot, the workflow can submit an Azure Quota Management request and poll until the new limit becomes usable.
-- `ManagedEnvironmentConsumptionCores` is environment scoped. Azure treats this quota as a manual-request class, so the workflow detects insufficient capacity immediately after the environment is created and stops before image build with exact `current`, `limit`, `available`, and `requiredAvailable` values.
-
-The current policy reserves 1.5 free consumption cores, matching three application replicas at 0.5 core each. Application CPU or scaling changes must update this policy in the same change set.
+Application CPU/scaling changes must update quota policy in the same change set.
 
 ## Deployment workflow
 
-`.github/workflows/deploy-azure.yml` can run manually or from the dedicated `deploy/azure-production` trigger branch. Normal pull requests validate application code, the OIDC bootstrap shell, quota decision logic, and Bicep without receiving production credentials.
+`.github/workflows/deploy-container-apps.yml` is manual-only (`workflow_dispatch`).
 
-The production sequence is fail-closed:
+Production sequence:
 
-1. Validate required GitHub production secrets.
-2. OIDC login to Azure.
-3. Register/verify Azure quota tooling.
+1. Validate required GitHub environment configuration.
+2. Login to Azure using OIDC.
+3. Verify/register providers and quota tooling.
 4. Create/update the resource group.
-5. Check regional Container Apps quota and request supported capacity increases when required.
-6. Deploy VNet, private PostgreSQL, ACR, identities, Log Analytics, and Container Apps environment.
-7. Check environment consumption-core quota before image build.
-8. Build and push the frozen-dependency backend image.
-9. Deploy the Container App with external ingress disabled and `CMDB_AUTH_MODE=entra`.
-10. Create the Entra application, App Roles, service principal, FIC, and Container Apps auth config.
-11. Verify EasyAuth is enabled and `appRoleAssignmentRequired=true`.
-12. Only then enable external ingress.
-13. Verify an active revision exists.
-14. Verify `/health` is reachable and an unauthenticated `/ui/` request is redirected to login.
-15. Persist a non-sensitive deployment result containing run ID, status, commit, resource group, location, and name prefix to the deployment branch for troubleshooting.
+5. Check/request supported regional quota.
+6. Deploy the Azure foundation.
+7. Check environment core quota.
+8. Build and push the backend image.
+9. Deploy the Container App with external ingress disabled and Entra auth enabled.
+10. Verify EasyAuth and assignment requirements.
+11. Enable external ingress.
+12. Verify the active revision, `/health`, and unauthenticated login redirect.
 
-A failure before external-ingress enablement leaves the CMDB non-public. The deployment-result step runs with `always()` on `deploy/azure-production`, so successful and failed attempts both leave an auditable run pointer.
+GitHub Actions is the deployment history. The workflow does not write generated deployment status files back into the repository and does not use a dedicated trigger branch or marker file.
 
-## Assign first users
+## First-user assignment
 
-After the first successful deployment, assign an Entra user or group to one of the generated enterprise application's roles:
+After a successful deployment, explicitly assign real Entra users/groups to one of:
 
-- operators who only inspect configuration: `CMDB.Reader`
-- administrators allowed to change configuration: `CMDB.Admin`
+- `CMDB.Reader`
+- `CMDB.Admin`
 
-Do not give every tenant user a default role. The application is deliberately configured to require explicit assignment.
+The repository intentionally does not guess tenant principal IDs or auto-assign all users.
 
 ## Runtime database configuration
 
-Azure sets database settings as separate environment variables so passwords with URL-reserved characters remain valid:
+Azure sets database components separately so URL-reserved password characters remain safe:
 
 - `CMDB_DB_HOST`
 - `CMDB_DB_PORT`
@@ -168,11 +129,11 @@ Azure sets database settings as separate environment variables so passwords with
 - `CMDB_DB_PASSWORD`
 - `CMDB_DB_NAME`
 
-`DATABASE_URL` remains supported for local development and CI. Component-based PostgreSQL configuration uses `sslmode=require`.
+`DATABASE_URL` remains supported for local development and CI.
 
 ## Health semantics
 
-- `/health` proves the application process is alive.
-- `/ready` executes `SELECT 1` and proves the database is reachable.
-- Both paths are excluded from EasyAuth so Container Apps probes continue to function.
-- CMDB data and Web Console routes remain authentication protected in production.
+- `/health` — process liveness
+- `/ready` — database readiness (`SELECT 1`)
+
+Health paths remain available to platform probes while CMDB data/UI routes are protected by the production authentication boundary.
