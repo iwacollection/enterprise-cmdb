@@ -53,7 +53,8 @@ jobs:
             ACR_NAME \
             ACR_LOGIN_SERVER \
             CMDB_DATABASE_URL; do
-            [[ -n "${!name:-}" ]] || missing+=("$name")
+            value="${!name-}"
+            [[ -n "$value" ]] || missing+=("$name")
           done
 
           if (( ${#missing[@]} > 0 )); then
@@ -89,9 +90,8 @@ jobs:
           acr_id=$(az acr show --name "$ACR_NAME" --query id --output tsv)
 
           assignment_id=$(az role assignment list \
-            --assignee-object-id "$kubelet_object_id" \
             --scope "$acr_id" \
-            --query "[?roleDefinitionName=='AcrPull'].id | [0]" \
+            --query "[?principalId=='${kubelet_object_id}' && roleDefinitionName=='AcrPull'].id | [0]" \
             --output tsv)
 
           if [[ -z "$assignment_id" ]]; then
