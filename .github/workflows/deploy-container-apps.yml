@@ -1,4 +1,4 @@
-name: Deploy Azure
+name: Deploy Azure Container Apps
 
 on:
   workflow_dispatch:
@@ -23,29 +23,24 @@ on:
         required: true
         default: true
         type: boolean
-  push:
-    branches:
-      - deploy/azure-production
-    paths:
-      - .github/deploy-production
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 concurrency:
-  group: deploy-azure-production
+  group: deploy-azure-container-apps-production
   cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     env:
-      RESOURCE_GROUP: ${{ inputs.resource_group || 'rg-enterprise-cmdb' }}
-      LOCATION: ${{ inputs.location || 'eastasia' }}
-      NAME_PREFIX: ${{ inputs.name_prefix || 'cmdb' }}
-      AUTO_REQUEST_QUOTA: "true"
+      RESOURCE_GROUP: ${{ inputs.resource_group }}
+      LOCATION: ${{ inputs.location }}
+      NAME_PREFIX: ${{ inputs.name_prefix }}
+      AUTO_REQUEST_QUOTA: ${{ inputs.auto_request_quota }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -54,12 +49,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Resolve manual deployment inputs
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: echo "AUTO_REQUEST_QUOTA=${{ inputs.auto_request_quota }}" >> "$GITHUB_ENV"
-
-      - name: Validate Azure deployment credentials
+      - name: Validate production configuration
+        shell: bash
         run: |
           set -euo pipefail
           missing=()
@@ -68,7 +62,7 @@ jobs:
           [[ -n "$AZURE_SUBSCRIPTION_ID" ]] || missing+=(AZURE_SUBSCRIPTION_ID)
           [[ -n "$POSTGRES_PASSWORD" ]] || missing+=(AZURE_POSTGRES_ADMIN_PASSWORD)
           if (( ${#missing[@]} > 0 )); then
-            echo "::error::Missing GitHub production secrets: ${missing[*]}. Configure them in the repository production environment before Azure deployment can run."
+            echo "::error::Missing GitHub production secrets: ${missing[*]}"
             exit 1
           fi
 
@@ -79,8 +73,10 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Ensure Azure quota tooling
+      - name: Ensure Azure providers and quota tooling
+        shell: bash
         run: |
+          set -euo pipefail
           az provider register --namespace Microsoft.App --wait
           az provider register --namespace Microsoft.Quota --wait
           az extension add --name quota --upgrade --only-show-errors
@@ -93,6 +89,7 @@ jobs:
             --output none
 
       - name: Preflight regional Container Apps quota
+        shell: bash
         run: |
           set -euo pipefail
           policy_file="infra/azure/quota-policy.json"
@@ -143,7 +140,7 @@ jobs:
             --limit-object "value=${requested_limit}" \
             --no-wait false \
             --output json > quota-request.json; then
-            echo "::error::Automatic quota request failed. The deployment identity needs Microsoft.Quota/quotas/write, normally via Quota Request Operator."
+            echo "::error::Automatic quota request failed. The deployment identity needs Microsoft.Quota/quotas/write."
             exit 1
           fi
 
@@ -164,12 +161,14 @@ jobs:
             sleep "$poll_seconds"
           done
 
-          echo "::error::Quota request was submitted but ManagedEnvironmentCount did not become usable before the deployment polling window ended."
+          echo "::error::Quota request was submitted but ManagedEnvironmentCount did not become usable before the polling window ended."
           exit 1
 
       - name: Deploy Azure foundation
         id: foundation
+        shell: bash
         run: |
+          set -euo pipefail
           outputs=$(az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/azure/main.bicep \
@@ -183,10 +182,13 @@ jobs:
 
           acr_name=$(echo "$outputs" | jq -r '.acrName.value')
           acr_server=$(echo "$outputs" | jq -r '.acrLoginServer.value')
+          [[ -n "$acr_name" && "$acr_name" != "null" ]]
+          [[ -n "$acr_server" && "$acr_server" != "null" ]]
           echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
           echo "acr_server=$acr_server" >> "$GITHUB_OUTPUT"
 
       - name: Preflight Container Apps environment core quota
+        shell: bash
         run: |
           set -euo pipefail
           policy_file="infra/azure/quota-policy.json"
@@ -216,7 +218,9 @@ jobs:
         id: image
         env:
           ACR_SERVER: ${{ steps.foundation.outputs.acr_server }}
+        shell: bash
         run: |
+          set -euo pipefail
           image="$ACR_SERVER/enterprise-cmdb:${GITHUB_SHA}"
           docker build --file backend/Dockerfile --tag "$image" backend
           docker push "$image"
@@ -241,7 +245,9 @@ jobs:
 
       - name: Verify Entra auth configuration
         id: auth
+        shell: bash
         run: |
+          set -euo pipefail
           app_name="${NAME_PREFIX}-app"
           auth_json=$(az containerapp auth show \
             --resource-group "$RESOURCE_GROUP" \
@@ -279,7 +285,9 @@ jobs:
       - name: Verify active revision and protected endpoint
         env:
           ENTRA_CLIENT_ID: ${{ steps.auth.outputs.client_id }}
+        shell: bash
         run: |
+          set -euo pipefail
           app_name="${NAME_PREFIX}-app"
           revision=$(az containerapp revision list \
             --resource-group "$RESOURCE_GROUP" \
@@ -303,30 +311,3 @@ jobs:
           echo "CMDB URL: https://${fqdn}/ui/"
           echo "Entra application client ID: $ENTRA_CLIENT_ID"
           echo "Assign CMDB.Reader or CMDB.Admin before interactive sign-in."
-
-      - name: Publish deployment result
-        if: ${{ always() && github.ref_name == 'deploy/azure-production' }}
-        env:
-          DEPLOY_STATUS: ${{ job.status }}
-        run: |
-          mkdir -p docs/deployment
-          cat > docs/deployment/last-azure-production-status.md <<EOF
-          # Last Azure Production Deployment
-
-          status: ${DEPLOY_STATUS}
-          run_id: ${GITHUB_RUN_ID}
-          run_attempt: ${GITHUB_RUN_ATTEMPT}
-          commit: ${GITHUB_SHA}
-          resource_group: ${RESOURCE_GROUP}
-          location: ${LOCATION}
-          name_prefix: ${NAME_PREFIX}
-          EOF
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/deployment/last-azure-production-status.md
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "deploy: record Azure production result"
-          git push origin "HEAD:${GITHUB_REF_NAME}"

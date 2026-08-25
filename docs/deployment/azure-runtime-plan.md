@@ -1,10 +1,14 @@
-# Azure Runtime Deployment Plan
+# Azure Container Apps Runtime Plan
 
-## Goal
+## Scope
 
-Deploy Enterprise CMDB on Microsoft Azure while keeping Azure concerns outside the domain layer.
+This document describes the **manual Azure Container Apps full-stack deployment path**. It is not the AKS application delivery path.
 
-## V0.3 Runtime Architecture
+Infrastructure source of truth: `infra/azure/`
+
+Workflow: `.github/workflows/deploy-container-apps.yml`
+
+## Runtime architecture
 
 ```text
 GitHub Actions (OIDC)
@@ -16,6 +20,7 @@ GitHub Actions (OIDC)
                   +--> enterprise-cmdb Container App
                   |      +-- init: alembic upgrade head
                   |      +-- app: FastAPI + Web Console
+                  |      +-- Microsoft Entra EasyAuth
                   |
                   +--> VNet
                          |
@@ -24,62 +29,46 @@ GitHub Actions (OIDC)
                               private DNS
 ```
 
-## Implemented Baseline
+## Implemented controls
 
-- Azure SDK is not used in domain/application code.
-- Infrastructure is defined in `infra/azure/main.bicep`.
-- Deployment is defined in `.github/workflows/deploy-azure.yml`.
+- Azure concerns remain outside the domain layer.
+- Infrastructure is defined in Bicep.
 - PostgreSQL public network access is disabled.
 - Container Apps and PostgreSQL use separate delegated subnets.
 - ACR admin user and anonymous pull are disabled.
-- Container image pull uses a user-assigned managed identity with `AcrPull`.
+- Container image pull uses managed identity with `AcrPull`.
 - Database credentials are injected as Container App secrets.
-- Alembic runs in an init container before the application becomes ready.
-- `/health` validates process liveness.
-- `/ready` validates database connectivity.
-- Log Analytics receives Container Apps logs.
-- External application ingress defaults to disabled.
+- Alembic runs before the application becomes ready.
+- `/health` is liveness; `/ready` is database readiness.
+- Microsoft Entra EasyAuth is enabled before public ingress is opened.
+- `CMDB.Reader` and `CMDB.Admin` App Roles are provisioned.
+- `appRoleAssignmentRequired=true` prevents unassigned tenant users from becoming CMDB users.
+- Deployment authentication uses GitHub OIDC; no Azure client secret is stored in Git.
 
-## Deployment Order
+## Deployment order
 
-1. GitHub Actions authenticates to Azure using OIDC.
-2. Create/update resource group.
-3. Deploy network, PostgreSQL, ACR, identity, Log Analytics and Container Apps environment.
-4. Build application image.
-5. Push image to ACR.
-6. Deploy Container App with the image.
-7. Init container applies Alembic migrations.
-8. Container Apps probes liveness/readiness.
-9. Verify an active revision exists.
-10. Run external smoke test only if external ingress was explicitly enabled.
+1. Authenticate to Azure using GitHub OIDC.
+2. Validate quota/capability prerequisites.
+3. Create/update the resource group and Azure foundation.
+4. Build and push the application image to ACR.
+5. Deploy the Container App privately with Entra auth enabled.
+6. Verify the auth configuration and service-principal assignment requirement.
+7. Enable external ingress only after the auth boundary is verified.
+8. Verify the active revision and protected endpoint behavior.
 
-## Required GitHub Production Secrets
+## Required GitHub `production` secrets
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
 - `AZURE_POSTGRES_ADMIN_PASSWORD`
 
-Azure login uses federated workload identity; no Azure client secret is stored in the repository.
+## Operating model
 
-## Resolved Infrastructure Defaults
+This workflow is `workflow_dispatch` only. A special deployment branch, marker file, or generated status commit is not part of the deployment protocol.
 
-- Runtime: Azure Container Apps, not AKS
-- Database: Azure Database for PostgreSQL Flexible Server
-- Registry: Azure Container Registry Basic
-- Database networking: private VNet only
-- PostgreSQL backup retention: 7 days default, parameterized up to 35
-- PostgreSQL HA: disabled for the initial V0.3 baseline
-- App replicas: min 1 / max 3
-- Public CMDB ingress: disabled by default
+GitHub Actions is the execution/audit record. Desired infrastructure remains in `infra/azure/`.
 
-These are minimal V0.3 deployment defaults, not claims about a future production SLA.
+## Relationship to AKS
 
-## Remaining Production Security Decision
-
-Before external ingress is enabled, explicitly choose:
-
-- Authentication provider (Microsoft Entra ID or existing company identity system)
-- Permission model and role scope
-
-These decisions affect production security and potentially database Schema, so they are not inferred by the implementation.
+The AKS workflow deploys the application into an existing Kubernetes platform and does not use this Container Apps runtime. The two paths can coexist because they own different runtime targets, but neither should create a second source of truth for the other's manifests or infrastructure.

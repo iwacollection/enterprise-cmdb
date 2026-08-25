@@ -6,15 +6,21 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
-  backend:
-    runs-on: ubuntu-latest
+  validation:
+    name: Application and Delivery Validation
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -43,6 +49,7 @@ jobs:
         env:
           DATABASE_URL: sqlite+pysqlite:///./ci-migrations.db
         run: |
+          set -euo pipefail
           rm -f ci-migrations.db
           uv run alembic upgrade head
           uv run alembic check
@@ -54,6 +61,7 @@ jobs:
 
       - name: Smoke test PostgreSQL runtime
         run: |
+          set -euo pipefail
           cleanup() {
             docker compose down --volumes --remove-orphans
           }
@@ -64,6 +72,10 @@ jobs:
 
       - name: Build container
         run: docker build -t enterprise-cmdb:test .
+
+      - name: Validate Kubernetes Kustomize source
+        working-directory: ${{ github.workspace }}
+        run: kubectl kustomize k8s/base >/dev/null
 
       - name: Validate Azure bootstrap script
         working-directory: ${{ github.workspace }}
